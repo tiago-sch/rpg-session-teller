@@ -79,6 +79,7 @@ export default function DashboardPage() {
     supabase
       .from('campaigns')
       .select('id, name, description')
+      .eq('user_id', user!.id)
       .order('name')
       .then(({ data }) => {
         setCampaigns(data ?? [])
@@ -91,6 +92,7 @@ export default function DashboardPage() {
     let query = supabase
       .from('sessions')
       .select('public_id, title, campaign_id, campaigns(name), tldr, created_at, updated_at')
+      .eq('user_id', user!.id)
       .order('created_at', { ascending: false })
 
     if (selectedCampaign === 'none') {
