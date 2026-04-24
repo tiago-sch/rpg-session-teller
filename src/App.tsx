@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
+import LandingPage from './pages/LandingPage'
 import DashboardPage from './pages/DashboardPage'
 import NewSessionPage from './pages/NewSessionPage'
 import SessionPage from './pages/SessionPage'
@@ -19,17 +20,18 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function GuestRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   if (loading) return null
-  return session ? <Navigate to="/" replace /> : <>{children}</>
+  return session ? <Navigate to="/dashboard" replace /> : <>{children}</>
 }
 
 function AppRoutes() {
   return (
     <Routes>
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
       <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
       <Route path="/forgot-password" element={<GuestRoute><ForgotPasswordPage /></GuestRoute>} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+      <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
       <Route path="/new" element={<ProtectedRoute><NewSessionPage /></ProtectedRoute>} />
       <Route path="/session/:public_id" element={<ProtectedRoute><SessionPage /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />

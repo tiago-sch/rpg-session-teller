@@ -130,7 +130,7 @@ export default function SessionPage() {
       className="min-h-screen flex flex-col"
       style={{ background: 'radial-gradient(ellipse at 50% 0%, #1e1830 0%, var(--color-ink) 60%)' }}
     >
-      <AppHeader back={{ label: 'Chronicles', to: '/' }} right={headerRight} />
+      <AppHeader back={{ label: 'Chronicles', to: '/dashboard' }} right={headerRight} />
 
       <main className="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         {loading && (

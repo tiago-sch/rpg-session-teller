@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 
 interface AppHeaderProps {
   right?: React.ReactNode
@@ -7,6 +8,10 @@ interface AppHeaderProps {
 
 export default function AppHeader({ right, back }: AppHeaderProps) {
   const navigate = useNavigate()
+  const { user } = useAuth()
+
+  const homeTarget = user ? '/dashboard' : '/'
+
   return (
     <header
       className="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 shrink-0"
@@ -14,7 +19,7 @@ export default function AppHeader({ right, back }: AppHeaderProps) {
     >
       <div className="flex items-center gap-3 min-w-0">
         <button
-          onClick={() => navigate('/')}
+          onClick={() => navigate(homeTarget)}
           className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 cursor-pointer"
           style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border-bright)' }}
         >
