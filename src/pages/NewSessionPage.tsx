@@ -4,6 +4,7 @@ import { generateSession } from '../lib/gemini'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import CampaignSelect from '../components/CampaignSelect'
+import AppHeader from '../components/AppHeader'
 
 type Step = 'form' | 'generating' | 'preview'
 
@@ -61,40 +62,10 @@ export default function NewSessionPage() {
       className="min-h-screen flex flex-col"
       style={{ background: 'radial-gradient(ellipse at 50% 0%, #1e1830 0%, var(--color-ink) 60%)' }}
     >
-      {/* Header */}
-      <header
-        className="flex items-center justify-between px-8 py-4 shrink-0"
-        style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-ink-soft)' }}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-8 h-8 rounded-full flex items-center justify-center"
-            style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border-bright)' }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="var(--color-gold)" strokeWidth="1.5" strokeLinecap="round"/>
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="var(--color-gold)" strokeWidth="1.5"/>
-            </svg>
-          </div>
-          <span
-            className="text-sm font-semibold tracking-widest uppercase"
-            style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}
-          >
-            RPG Session Teller
-          </span>
-        </div>
-        <button
-          onClick={() => navigate('/')}
-          className="text-sm transition-opacity hover:opacity-70 cursor-pointer"
-          style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-display)' }}
-        >
-          ← Back
-        </button>
-      </header>
+      <AppHeader back={{ label: 'Chronicles', to: '/' }} />
 
-      <main className="flex-1 w-full max-w-2xl mx-auto px-6 py-12">
+      <main className="flex-1 w-full max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
 
-        {/* Form step */}
         {(step === 'form' || step === 'generating') && (
           <form onSubmit={handleGenerate} className="flex flex-col gap-6">
             <div>
@@ -200,7 +171,6 @@ export default function NewSessionPage() {
           </form>
         )}
 
-        {/* Preview step */}
         {step === 'preview' && result && (
           <div className="flex flex-col gap-8">
             <div>
@@ -215,37 +185,14 @@ export default function NewSessionPage() {
               </p>
             </div>
 
-            {/* TLDR */}
-            <div
-              className="rounded-xl px-6 py-5"
-              style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-            >
-              <p
-                className="text-xs font-semibold tracking-widest uppercase mb-3"
-                style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}
-              >
-                Summary
-              </p>
-              <p className="text-base leading-relaxed" style={{ color: 'var(--color-parchment)' }}>
-                {result.tldr}
-              </p>
+            <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+              <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Summary</p>
+              <p className="text-base leading-relaxed" style={{ color: 'var(--color-parchment)' }}>{result.tldr}</p>
             </div>
 
-            {/* Story */}
-            <div
-              className="rounded-xl px-6 py-5"
-              style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-            >
-              <p
-                className="text-xs font-semibold tracking-widest uppercase mb-3"
-                style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}
-              >
-                Chronicle
-              </p>
-              <div
-                className="text-base leading-relaxed whitespace-pre-wrap"
-                style={{ color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}
-              >
+            <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+              <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Chronicle</p>
+              <div className="text-base leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}>
                 {result.story}
               </div>
             </div>
@@ -257,12 +204,7 @@ export default function NewSessionPage() {
                 onClick={() => setStep('form')}
                 disabled={saving}
                 className="flex-1 py-2.5 rounded-lg text-sm font-semibold tracking-widest uppercase transition-colors cursor-pointer disabled:opacity-40"
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  background: 'var(--color-surface-raised)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-parchment-muted)',
-                }}
+                style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
               >
                 Edit Notes
               </button>
@@ -270,13 +212,7 @@ export default function NewSessionPage() {
                 onClick={handleSave}
                 disabled={saving}
                 className="flex-1 py-2.5 rounded-lg text-sm font-semibold tracking-widest uppercase transition-all cursor-pointer disabled:opacity-40"
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)',
-                  color: '#0c0a14',
-                  border: '1px solid var(--color-gold-dim)',
-                  boxShadow: '0 0 20px rgba(200,145,58,0.2)',
-                }}
+                style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)', color: '#0c0a14', border: '1px solid var(--color-gold-dim)', boxShadow: '0 0 20px rgba(200,145,58,0.2)' }}
               >
                 {saving ? 'Saving…' : 'Save Session'}
               </button>

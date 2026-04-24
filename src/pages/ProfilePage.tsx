@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../hooks/useProfile'
+import AppHeader from '../components/AppHeader'
 
 export default function ProfilePage() {
-  const navigate = useNavigate()
   const { user, signOut } = useAuth()
   const { profile, loading, update } = useProfile()
 
@@ -33,37 +32,9 @@ export default function ProfilePage() {
       className="min-h-screen flex flex-col"
       style={{ background: 'radial-gradient(ellipse at 50% 0%, #1e1830 0%, var(--color-ink) 60%)' }}
     >
-      <header
-        className="flex items-center justify-between px-8 py-4 shrink-0"
-        style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-ink-soft)' }}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-8 h-8 rounded-full flex items-center justify-center"
-            style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border-bright)' }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="var(--color-gold)" strokeWidth="1.5" strokeLinecap="round"/>
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="var(--color-gold)" strokeWidth="1.5"/>
-            </svg>
-          </div>
-          <span
-            className="text-sm font-semibold tracking-widest uppercase"
-            style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}
-          >
-            RPG Session Teller
-          </span>
-        </div>
-        <button
-          onClick={() => navigate('/')}
-          className="text-sm transition-opacity hover:opacity-70 cursor-pointer"
-          style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-display)' }}
-        >
-          ← Chronicles
-        </button>
-      </header>
+      <AppHeader back={{ label: 'Chronicles', to: '/' }} />
 
-      <main className="flex-1 w-full max-w-sm mx-auto px-6 py-12 flex flex-col gap-8">
+      <main className="flex-1 w-full max-w-sm mx-auto px-4 sm:px-6 py-8 sm:py-12 flex flex-col gap-8">
         <div>
           <h1
             className="text-2xl font-semibold tracking-wide mb-1"

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import AppHeader from '../components/AppHeader'
 
 interface PublicSession {
   title: string
-  campaign_name: string | null  // resolved from join
+  campaign_name: string | null
   tldr: string | null
   generated_text: string | null
   updated_at: string
@@ -56,30 +57,9 @@ export default function SharePage() {
       className="min-h-screen flex flex-col"
       style={{ background: 'radial-gradient(ellipse at 50% 0%, #1e1830 0%, var(--color-ink) 60%)' }}
     >
-      <header
-        className="flex items-center justify-between px-8 py-4 shrink-0"
-        style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-ink-soft)' }}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-8 h-8 rounded-full flex items-center justify-center"
-            style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border-bright)' }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="var(--color-gold)" strokeWidth="1.5" strokeLinecap="round"/>
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="var(--color-gold)" strokeWidth="1.5"/>
-            </svg>
-          </div>
-          <span
-            className="text-sm font-semibold tracking-widest uppercase"
-            style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}
-          >
-            RPG Session Teller
-          </span>
-        </div>
-      </header>
+      <AppHeader />
 
-      <main className="flex-1 w-full max-w-3xl mx-auto px-6 py-12">
+      <main className="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         {loading && (
           <div className="flex justify-center pt-24">
             <svg className="animate-spin" width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -104,7 +84,7 @@ export default function SharePage() {
                 </p>
               )}
               <h1
-                className="text-3xl font-semibold tracking-wide mb-3"
+                className="text-2xl sm:text-3xl font-semibold tracking-wide mb-3"
                 style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}
               >
                 {session.title}
@@ -124,14 +104,14 @@ export default function SharePage() {
             </div>
 
             {session.tldr && (
-              <div className="rounded-xl px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+              <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                 <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Summary</p>
                 <p className="text-base leading-relaxed" style={{ color: 'var(--color-parchment)' }}>{session.tldr}</p>
               </div>
             )}
 
             {session.generated_text && (
-              <div className="rounded-xl px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+              <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                 <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Chronicle</p>
                 <div className="text-base leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}>
                   {session.generated_text}

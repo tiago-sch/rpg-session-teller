@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import CampaignSelect from '../components/CampaignSelect'
+import AppHeader from '../components/AppHeader'
 
 interface Session {
   user_id: string
@@ -26,7 +27,6 @@ export default function SessionPage() {
   const [showNotes, setShowNotes] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  // inline edit state
   const [editing, setEditing] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editCampaignId, setEditCampaignId] = useState<number | null>(null)
@@ -91,77 +91,48 @@ export default function SessionPage() {
     fontFamily: 'var(--font-body)',
   }
 
+  const headerRight = session && !editing ? (
+    <>
+      <button
+        onClick={startEditing}
+        className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-colors cursor-pointer"
+        style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
+        onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
+        onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+        </svg>
+        <span className="hidden sm:inline">Edit</span>
+      </button>
+      <button
+        onClick={handleCopy}
+        className="flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer"
+        style={{
+          fontFamily: 'var(--font-display)',
+          background: copied ? 'var(--color-gold-dim)' : 'var(--color-surface-raised)',
+          border: `1px solid ${copied ? 'var(--color-gold)' : 'var(--color-border)'}`,
+          color: copied ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
+        }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+        </svg>
+        <span className="hidden sm:inline">{copied ? 'Copied!' : 'Share'}</span>
+      </button>
+    </>
+  ) : undefined
+
   return (
     <div
       className="min-h-screen flex flex-col"
       style={{ background: 'radial-gradient(ellipse at 50% 0%, #1e1830 0%, var(--color-ink) 60%)' }}
     >
-      <header
-        className="flex items-center justify-between px-8 py-4 shrink-0"
-        style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-ink-soft)' }}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-8 h-8 rounded-full flex items-center justify-center"
-            style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border-bright)' }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="var(--color-gold)" strokeWidth="1.5" strokeLinecap="round"/>
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="var(--color-gold)" strokeWidth="1.5"/>
-            </svg>
-          </div>
-          <span
-            className="text-sm font-semibold tracking-widest uppercase"
-            style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}
-          >
-            RPG Session Teller
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          {session && !editing && (
-            <>
-              <button
-                onClick={startEditing}
-                className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-colors cursor-pointer"
-                style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
-                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                </svg>
-                Edit
-              </button>
-              <button
-                onClick={handleCopy}
-                className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer"
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  background: copied ? 'var(--color-gold-dim)' : 'var(--color-surface-raised)',
-                  border: `1px solid ${copied ? 'var(--color-gold)' : 'var(--color-border)'}`,
-                  color: copied ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
-                }}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                </svg>
-                {copied ? 'Copied!' : 'Share'}
-              </button>
-            </>
-          )}
-          <button
-            onClick={() => navigate('/')}
-            className="text-sm transition-opacity hover:opacity-70 cursor-pointer"
-            style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-display)' }}
-          >
-            ← Chronicles
-          </button>
-        </div>
-      </header>
+      <AppHeader back={{ label: 'Chronicles', to: '/' }} right={headerRight} />
 
-      <main className="flex-1 w-full max-w-3xl mx-auto px-6 py-12">
+      <main className="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         {loading && (
           <div className="flex justify-center pt-24">
             <svg className="animate-spin" width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -179,7 +150,6 @@ export default function SessionPage() {
 
         {session && (
           <div className="flex flex-col gap-8">
-            {/* Title block — view or edit */}
             {editing ? (
               <form onSubmit={handleSave} className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1.5">
@@ -229,7 +199,7 @@ export default function SessionPage() {
                   </p>
                 )}
                 <h1
-                  className="text-3xl font-semibold tracking-wide mb-3"
+                  className="text-2xl sm:text-3xl font-semibold tracking-wide mb-3"
                   style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}
                 >
                   {session.title}
@@ -250,14 +220,14 @@ export default function SessionPage() {
             </div>
 
             {session.tldr && (
-              <div className="rounded-xl px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+              <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                 <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Summary</p>
                 <p className="text-base leading-relaxed" style={{ color: 'var(--color-parchment)' }}>{session.tldr}</p>
               </div>
             )}
 
             {session.generated_text && (
-              <div className="rounded-xl px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+              <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                 <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Chronicle</p>
                 <div className="text-base leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}>
                   {session.generated_text}

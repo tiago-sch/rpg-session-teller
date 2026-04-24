@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../hooks/useProfile'
 import { supabase } from '../lib/supabase'
+import AppHeader from '../components/AppHeader'
 
 interface Campaign {
   id: number
@@ -32,14 +33,12 @@ export default function DashboardPage() {
   const [loadingCampaigns, setLoadingCampaigns] = useState(true)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
-  // New campaign modal
   const [showModal, setShowModal] = useState(false)
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
 
-  // Edit campaign modal
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null)
   const [editName, setEditName] = useState('')
   const [editDesc, setEditDesc] = useState('')
@@ -126,103 +125,72 @@ export default function DashboardPage() {
     setCreating(false)
   }
 
-  const visibleSessions = sessions
   const isLoading = loadingSessions || loadingCampaigns
+
+  const profileBtn = (
+    <button
+      onClick={() => navigate('/profile')}
+      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors cursor-pointer"
+      style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
+      onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
+      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.5"/>
+        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      </svg>
+      <span className="hidden sm:inline">{profile?.display_name ?? user?.email}</span>
+    </button>
+  )
 
   return (
     <div
       className="min-h-screen flex flex-col"
       style={{ background: 'radial-gradient(ellipse at 50% 0%, #1e1830 0%, var(--color-ink) 60%)' }}
     >
-      {/* Header */}
-      <header
-        className="flex items-center justify-between px-8 py-4 shrink-0"
-        style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-ink-soft)' }}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-            style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border-bright)' }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="var(--color-gold)" strokeWidth="1.5" strokeLinecap="round"/>
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="var(--color-gold)" strokeWidth="1.5"/>
-            </svg>
-          </div>
-          <span
-            className="text-sm font-semibold tracking-widest uppercase"
-            style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}
-          >
-            RPG Session Teller
-          </span>
-        </div>
-        <button
-          onClick={() => navigate('/profile')}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors cursor-pointer"
-          style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
-          onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
-          onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.5"/>
-            <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          <span className="hidden sm:inline">{profile?.display_name ?? user?.email}</span>
-        </button>
-      </header>
+      <AppHeader right={profileBtn} />
 
-      {/* Body: sidebar + content */}
+      {/* Mobile campaign chips */}
+      <div className="md:hidden flex items-center gap-2 px-4 py-3 overflow-x-auto shrink-0" style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-ink-soft)' }}>
+        <Chip label="All" active={selectedCampaign === 'all'} onClick={() => setSelectedCampaign('all')} />
+        {campaigns.map(c => (
+          <Chip key={c.id} label={c.name} active={selectedCampaign === c.id} onClick={() => setSelectedCampaign(c.id)} />
+        ))}
+        {campaigns.length > 0 && (
+          <Chip label="Uncategorized" active={selectedCampaign === 'none'} onClick={() => setSelectedCampaign('none')} muted />
+        )}
+        <button
+          onClick={() => { setShowModal(true); setCreateError('') }}
+          className="shrink-0 px-3 py-1 rounded-full text-xs font-semibold tracking-widest uppercase cursor-pointer"
+          style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)', border: '1px dashed var(--color-gold-dim)', whiteSpace: 'nowrap' }}
+        >
+          + Campaign
+        </button>
+      </div>
+
+      {/* Body */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* Campaigns sidebar */}
+        {/* Desktop sidebar */}
         <aside
-          className="w-56 shrink-0 flex flex-col py-6 px-3 gap-1 overflow-y-auto"
+          className="hidden md:flex w-56 shrink-0 flex-col py-6 px-3 gap-1 overflow-y-auto"
           style={{ borderRight: '1px solid var(--color-border)', background: 'var(--color-ink-soft)' }}
         >
-          <p
-            className="px-3 pb-2 text-xs font-semibold tracking-widest uppercase"
-            style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}
-          >
+          <p className="px-3 pb-2 text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>
             Campaigns
           </p>
-
-          {/* All sessions */}
-          <SidebarItem
-            label="All Sessions"
-            active={selectedCampaign === 'all'}
-            onClick={() => setSelectedCampaign('all')}
-          />
-
-          {/* Per-campaign */}
+          <SidebarItem label="All Sessions" active={selectedCampaign === 'all'} onClick={() => setSelectedCampaign('all')} />
           {campaigns.map(c => (
-            <SidebarItem
-              key={c.id}
-              label={c.name}
-              active={selectedCampaign === c.id}
-              onClick={() => setSelectedCampaign(c.id)}
-              onEdit={() => openEdit(c)}
-            />
+            <SidebarItem key={c.id} label={c.name} active={selectedCampaign === c.id} onClick={() => setSelectedCampaign(c.id)} onEdit={() => openEdit(c)} />
           ))}
-
-          {/* Uncategorized */}
           {campaigns.length > 0 && (
-            <SidebarItem
-              label="Uncategorized"
-              active={selectedCampaign === 'none'}
-              onClick={() => setSelectedCampaign('none')}
-              muted
-            />
+            <SidebarItem label="Uncategorized" active={selectedCampaign === 'none'} onClick={() => setSelectedCampaign('none')} muted />
           )}
-
           <div className="mt-auto pt-4">
             <button
               onClick={() => { setShowModal(true); setCreateError('') }}
               className="w-full px-3 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase text-left transition-colors cursor-pointer"
-              style={{
-                fontFamily: 'var(--font-display)',
-                color: 'var(--color-gold)',
-                border: '1px dashed var(--color-gold-dim)',
-              }}
+              style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)', border: '1px dashed var(--color-gold-dim)' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'rgba(200,145,58,0.06)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
@@ -232,12 +200,12 @@ export default function DashboardPage() {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 overflow-auto px-8 py-8 flex flex-col gap-6">
+        <main className="flex-1 overflow-auto px-4 sm:px-8 py-6 sm:py-8 flex flex-col gap-5 sm:gap-6">
 
           {/* Title row */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <h1
-              className="text-xl font-semibold tracking-wide"
+              className="text-lg sm:text-xl font-semibold tracking-wide truncate"
               style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}
             >
               {selectedCampaign === 'all'
@@ -246,21 +214,37 @@ export default function DashboardPage() {
                 ? 'Uncategorized'
                 : (campaigns.find(c => c.id === selectedCampaign)?.name ?? '')}
             </h1>
-            <button
-              onClick={() => navigate('/new')}
-              className="px-5 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer"
-              style={{
-                fontFamily: 'var(--font-display)',
-                background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)',
-                color: '#0c0a14',
-                border: '1px solid var(--color-gold-dim)',
-                boxShadow: '0 0 16px rgba(200,145,58,0.2)',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 0 24px rgba(200,145,58,0.4)')}
-              onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 0 16px rgba(200,145,58,0.2)')}
-            >
-              + New Session
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Edit campaign shortcut on mobile when a specific campaign is selected */}
+              {selectedCampaign !== 'all' && selectedCampaign !== 'none' && (
+                <button
+                  onClick={() => { const c = campaigns.find(x => x.id === selectedCampaign); if (c) openEdit(c) }}
+                  className="md:hidden p-2 rounded-lg cursor-pointer"
+                  style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
+                  title="Edit campaign"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              )}
+              <button
+                onClick={() => navigate('/new')}
+                className="px-4 sm:px-5 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer"
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)',
+                  color: '#0c0a14',
+                  border: '1px solid var(--color-gold-dim)',
+                  boxShadow: '0 0 16px rgba(200,145,58,0.2)',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 0 24px rgba(200,145,58,0.4)')}
+                onMouseLeave={e => (e.currentTarget.style.boxShadow = '0 0 16px rgba(200,145,58,0.2)')}
+              >
+                + New
+              </button>
+            </div>
           </div>
 
           {/* Campaign description */}
@@ -284,7 +268,7 @@ export default function DashboardPage() {
           )}
 
           {/* Empty state */}
-          {!isLoading && visibleSessions.length === 0 && (
+          {!isLoading && sessions.length === 0 && (
             <div className="flex flex-col items-center justify-center text-center gap-4 py-20">
               <div
                 className="w-12 h-12 rounded-full flex items-center justify-center"
@@ -295,15 +279,79 @@ export default function DashboardPage() {
                   <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="var(--color-gold)" strokeWidth="1.5"/>
                 </svg>
               </div>
-              <p className="text-sm" style={{ color: 'var(--color-parchment-muted)' }}>
-                No sessions here yet.
-              </p>
+              <p className="text-sm" style={{ color: 'var(--color-parchment-muted)' }}>No sessions here yet.</p>
             </div>
           )}
 
-          {/* Sessions table */}
-          {!isLoading && visibleSessions.length > 0 && (
-            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+          {/* Mobile: session cards */}
+          {!isLoading && sessions.length > 0 && (
+            <div className="md:hidden flex flex-col gap-3">
+              {sessions.map(session => (
+                <div
+                  key={session.public_id}
+                  className="rounded-xl px-4 py-4 flex flex-col gap-2"
+                  style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <button
+                      onClick={() => navigate(`/session/${session.public_id}`)}
+                      className="text-left font-semibold leading-snug hover:underline cursor-pointer"
+                      style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold-light)' }}
+                    >
+                      {session.title}
+                    </button>
+                    <div className="flex items-center gap-2 shrink-0 pt-0.5">
+                      <button
+                        title="Copy share link"
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(`${window.location.origin}/s/${session.public_id}`)
+                          setCopiedId(session.public_id)
+                          setTimeout(() => setCopiedId(null), 2000)
+                        }}
+                        className="cursor-pointer"
+                        style={{ color: copiedId === session.public_id ? 'var(--color-gold)' : 'var(--color-parchment-muted)', opacity: 0.7 }}
+                      >
+                        {copiedId === session.public_id ? (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                            <path d="M20 6L9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        ) : (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                          </svg>
+                        )}
+                      </button>
+                      <a
+                        title="Open share page"
+                        href={`/s/${session.public_id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ color: 'var(--color-parchment-muted)', opacity: 0.7 }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                          <path d="M15 3h6v6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M10 14L21 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                        </svg>
+                      </a>
+                    </div>
+                  </div>
+                  {selectedCampaign === 'all' && session.campaigns?.name && (
+                    <p className="text-xs" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)', opacity: 0.8 }}>{session.campaigns.name}</p>
+                  )}
+                  {session.tldr && (
+                    <p className="text-sm leading-relaxed line-clamp-2" style={{ color: 'var(--color-parchment-muted)' }}>{session.tldr}</p>
+                  )}
+                  <p className="text-xs" style={{ color: 'var(--color-border-bright)' }}>{fmt(session.created_at)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Desktop: sessions table */}
+          {!isLoading && sessions.length > 0 && (
+            <div className="hidden md:block rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr style={{ background: 'var(--color-surface-raised)', borderBottom: '1px solid var(--color-border)' }}>
@@ -322,12 +370,12 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleSessions.map((session, i) => (
+                  {sessions.map((session, i) => (
                     <tr
                       key={session.public_id}
                       style={{
                         background: i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-ink-soft)',
-                        borderBottom: i < visibleSessions.length - 1 ? '1px solid var(--color-border)' : 'none',
+                        borderBottom: i < sessions.length - 1 ? '1px solid var(--color-border)' : 'none',
                       }}
                     >
                       <td className="px-5 py-4 align-top w-44">
@@ -418,9 +466,7 @@ export default function DashboardPage() {
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid var(--color-border)' }}>
-              <p className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>
-                New Campaign
-              </p>
+              <p className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>New Campaign</p>
               <button onClick={() => setShowModal(false)} className="text-lg leading-none cursor-pointer transition-opacity hover:opacity-60" style={{ color: 'var(--color-parchment-muted)' }}>✕</button>
             </div>
             <form onSubmit={handleCreateCampaign} className="px-6 py-5 flex flex-col gap-4">
@@ -481,9 +527,7 @@ export default function DashboardPage() {
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid var(--color-border)' }}>
-              <p className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>
-                Edit Campaign
-              </p>
+              <p className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Edit Campaign</p>
               <button onClick={() => setEditingCampaign(null)} className="text-lg leading-none cursor-pointer transition-opacity hover:opacity-60" style={{ color: 'var(--color-parchment-muted)' }}>✕</button>
             </div>
             <form onSubmit={handleEditCampaign} className="px-6 py-5 flex flex-col gap-4">
@@ -529,6 +573,24 @@ export default function DashboardPage() {
         </div>
       )}
     </div>
+  )
+}
+
+function Chip({ label, active, onClick, muted }: { label: string; active: boolean; onClick: () => void; muted?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      className="shrink-0 px-3 py-1 rounded-full text-xs font-semibold tracking-widest uppercase cursor-pointer transition-colors"
+      style={{
+        fontFamily: 'var(--font-display)',
+        background: active ? 'var(--color-surface-raised)' : 'transparent',
+        border: active ? '1px solid var(--color-gold-dim)' : '1px solid var(--color-border)',
+        color: active ? 'var(--color-parchment)' : muted ? 'var(--color-mist)' : 'var(--color-parchment-muted)',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </button>
   )
 }
 
