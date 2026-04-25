@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { useProfile } from '../hooks/useProfile'
 import { supabase } from '../lib/supabase'
 import AppHeader from '../components/AppHeader'
 
@@ -24,7 +23,6 @@ interface Session {
 export default function DashboardPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { profile } = useProfile()
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
@@ -129,28 +127,12 @@ export default function DashboardPage() {
 
   const isLoading = loadingSessions || loadingCampaigns
 
-  const profileBtn = (
-    <button
-      onClick={() => navigate('/profile')}
-      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs transition-colors cursor-pointer"
-      style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
-      onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
-      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
-    >
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-        <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.5"/>
-        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-      </svg>
-      <span className="hidden sm:inline">{profile?.display_name ?? user?.email}</span>
-    </button>
-  )
-
   return (
     <div
       className="min-h-screen flex flex-col"
       style={{ background: 'radial-gradient(ellipse at 50% 0%, #1e1830 0%, var(--color-ink) 60%)' }}
     >
-      <AppHeader right={profileBtn} />
+      <AppHeader />
 
       {/* Mobile campaign chips */}
       <div className="md:hidden flex items-center gap-2 px-4 py-3 overflow-x-auto shrink-0" style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-ink-soft)' }}>

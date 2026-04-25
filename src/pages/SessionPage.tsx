@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { generateSession } from '../lib/gemini'
 import CampaignSelect from '../components/CampaignSelect'
 import AppHeader from '../components/AppHeader'
 
 interface Session {
+  id: number
   user_id: string
   title: string
   campaign_id: number | null
@@ -17,6 +19,12 @@ interface Session {
   updated_at: string
 }
 
+interface PendingRegen {
+  prompt: string
+  tldr: string
+  story: string
+}
+
 export default function SessionPage() {
   const { public_id } = useParams<{ public_id: string }>()
   const navigate = useNavigate()
@@ -24,19 +32,40 @@ export default function SessionPage() {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
-  const [showNotes, setShowNotes] = useState(false)
   const [copied, setCopied] = useState(false)
 
+  // title/campaign edit
   const [editing, setEditing] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editCampaignId, setEditCampaignId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const [editError, setEditError] = useState('')
 
+  // chronicle (generated_text) inline edit
+  const [editingText, setEditingText] = useState(false)
+  const [editTextValue, setEditTextValue] = useState('')
+  const [savingText, setSavingText] = useState(false)
+
+  // add to group
+  const [showGroupModal, setShowGroupModal] = useState(false)
+  const [userGroups, setUserGroups] = useState<{ id: number; title: string }[]>([])
+  const [sessionGroupIds, setSessionGroupIds] = useState<Set<number>>(new Set())
+  const [pendingGroupIds, setPendingGroupIds] = useState<Set<number>>(new Set())
+  const [groupModalLoading, setGroupModalLoading] = useState(false)
+  const [groupSaving, setGroupSaving] = useState(false)
+
+  // notes / prompt edit + regeneration
+  const [showNotes, setShowNotes] = useState(false)
+  const [editingPrompt, setEditingPrompt] = useState(false)
+  const [editPromptValue, setEditPromptValue] = useState('')
+  const [regenerating, setRegenerating] = useState(false)
+  const [regenError, setRegenError] = useState('')
+  const [pendingRegen, setPendingRegen] = useState<PendingRegen | null>(null)
+
   useEffect(() => {
     supabase
       .from('sessions')
-      .select('user_id, title, campaign_id, campaigns(name), tldr, prompt, generated_text, created_at, updated_at')
+      .select('id, user_id, title, campaign_id, campaigns(name), tldr, prompt, generated_text, created_at, updated_at')
       .eq('public_id', public_id)
       .single()
       .then(({ data, error }) => {
@@ -51,6 +80,48 @@ export default function SessionPage() {
       })
   }, [public_id, user, navigate])
 
+  const openGroupModal = async () => {
+    if (!session || !user) return
+    setGroupModalLoading(true)
+    setShowGroupModal(true)
+    const [{ data: groups }, { data: memberships }] = await Promise.all([
+      supabase.from('session_groups').select('id, title').eq('user_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('group_sessions').select('group_id').eq('session_id', session.id),
+    ])
+    const currentIds = new Set((memberships ?? []).map((m: { group_id: number }) => m.group_id))
+    setUserGroups(groups ?? [])
+    setSessionGroupIds(currentIds)
+    setPendingGroupIds(new Set(currentIds))
+    setGroupModalLoading(false)
+  }
+
+  const toggleGroup = (id: number) => {
+    setPendingGroupIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const handleSaveGroups = async () => {
+    if (!session) return
+    setGroupSaving(true)
+    const toAdd = [...pendingGroupIds].filter(id => !sessionGroupIds.has(id))
+    const toRemove = [...sessionGroupIds].filter(id => !pendingGroupIds.has(id))
+    await Promise.all([
+      toAdd.length > 0
+        ? supabase.from('group_sessions').insert(toAdd.map(gid => ({ group_id: gid, session_id: session.id })))
+        : Promise.resolve(),
+      ...toRemove.map(gid =>
+        supabase.from('group_sessions').delete().eq('group_id', gid).eq('session_id', session.id)
+      ),
+    ])
+    setSessionGroupIds(new Set(pendingGroupIds))
+    setGroupSaving(false)
+    setShowGroupModal(false)
+  }
+
+  // title/campaign save
   const startEditing = () => {
     if (!session) return
     setEditTitle(session.title)
@@ -78,6 +149,70 @@ export default function SessionPage() {
     }
   }
 
+  // chronicle inline edit save
+  const startEditingText = () => {
+    setEditTextValue(session?.generated_text ?? '')
+    setEditingText(true)
+  }
+
+  const handleSaveText = async () => {
+    setSavingText(true)
+    const { error } = await supabase
+      .from('sessions')
+      .update({ generated_text: editTextValue })
+      .eq('public_id', public_id)
+    if (!error) {
+      setSession(s => s ? { ...s, generated_text: editTextValue } : s)
+      setEditingText(false)
+    }
+    setSavingText(false)
+  }
+
+  // prompt edit + regenerate
+  const openNotes = () => {
+    setEditPromptValue(session?.prompt ?? '')
+    setEditingPrompt(false)
+    setRegenError('')
+    setShowNotes(true)
+  }
+
+  const handleRegenerate = async () => {
+    if (!editPromptValue.trim()) return
+    setRegenerating(true)
+    setRegenError('')
+    try {
+      const result = await generateSession(editPromptValue.trim())
+      setPendingRegen({ prompt: editPromptValue.trim(), tldr: result.tldr, story: result.story })
+      setShowNotes(false)
+    } catch {
+      setRegenError('Generation failed. Please try again.')
+    } finally {
+      setRegenerating(false)
+    }
+  }
+
+  const confirmRegen = async () => {
+    if (!pendingRegen) return
+    const { error } = await supabase
+      .from('sessions')
+      .update({
+        prompt: pendingRegen.prompt,
+        tldr: pendingRegen.tldr,
+        generated_text: pendingRegen.story,
+      })
+      .eq('public_id', public_id)
+    if (!error) {
+      setSession(s => s ? {
+        ...s,
+        prompt: pendingRegen.prompt,
+        tldr: pendingRegen.tldr,
+        generated_text: pendingRegen.story,
+        updated_at: new Date().toISOString(),
+      } : s)
+    }
+    setPendingRegen(null)
+  }
+
   const handleCopy = async () => {
     await navigator.clipboard.writeText(`${window.location.origin}/s/${public_id}`)
     setCopied(true)
@@ -93,6 +228,23 @@ export default function SessionPage() {
 
   const headerRight = session && !editing ? (
     <>
+      <button
+        onClick={openGroupModal}
+        className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-colors cursor-pointer"
+        style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
+        onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
+        onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+          <line x1="8" y1="6" x2="21" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          <line x1="8" y1="12" x2="21" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          <line x1="8" y1="18" x2="21" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          <circle cx="3" cy="6" r="1.5" fill="currentColor"/>
+          <circle cx="3" cy="12" r="1.5" fill="currentColor"/>
+          <circle cx="3" cy="18" r="1.5" fill="currentColor"/>
+        </svg>
+        <span className="hidden sm:inline">Groups</span>
+      </button>
       <button
         onClick={startEditing}
         className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-colors cursor-pointer"
@@ -130,7 +282,7 @@ export default function SessionPage() {
       className="min-h-screen flex flex-col"
       style={{ background: 'radial-gradient(ellipse at 50% 0%, #1e1830 0%, var(--color-ink) 60%)' }}
     >
-      <AppHeader back={{ label: 'Chronicles', to: '/dashboard' }} right={headerRight} />
+      <AppHeader right={headerRight} />
 
       <main className="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         {loading && (
@@ -226,19 +378,67 @@ export default function SessionPage() {
               </div>
             )}
 
-            {session.generated_text && (
+            {session.generated_text !== null && (
               <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
-                <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Chronicle</p>
-                <div className="text-base leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}>
-                  {session.generated_text}
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Chronicle</p>
+                  {!editingText && (
+                    <button
+                      onClick={startEditingText}
+                      className="flex items-center gap-1 text-xs font-semibold tracking-widest uppercase cursor-pointer transition-opacity hover:opacity-70"
+                      style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                      </svg>
+                      Edit
+                    </button>
+                  )}
                 </div>
+                {editingText ? (
+                  <div className="flex flex-col gap-3">
+                    <textarea
+                      value={editTextValue}
+                      onChange={e => setEditTextValue(e.target.value)}
+                      autoFocus
+                      rows={16}
+                      className="w-full px-4 py-3 rounded-lg text-sm leading-relaxed resize-y focus:outline-none"
+                      style={{ ...inputStyle, minHeight: '280px' }}
+                      onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
+                      onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleSaveText}
+                        disabled={savingText}
+                        className="px-5 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40"
+                        style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)', color: '#0c0a14', border: '1px solid var(--color-gold-dim)' }}
+                      >
+                        {savingText ? 'Saving…' : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => setEditingText(false)}
+                        disabled={savingText}
+                        className="px-5 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40"
+                        style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-base leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}>
+                    {session.generated_text}
+                  </div>
+                )}
               </div>
             )}
 
             {session.prompt && (
               <div>
                 <button
-                  onClick={() => setShowNotes(true)}
+                  onClick={openNotes}
                   className="text-xs font-semibold tracking-widest uppercase cursor-pointer transition-opacity hover:opacity-70"
                   style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}
                 >
@@ -250,11 +450,12 @@ export default function SessionPage() {
         )}
       </main>
 
+      {/* Notes modal — view + edit + regenerate */}
       {showNotes && session?.prompt && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-4"
           style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
-          onClick={() => setShowNotes(false)}
+          onClick={() => { if (!regenerating) setShowNotes(false) }}
         >
           <div
             className="relative w-full max-w-xl max-h-[80vh] flex flex-col rounded-2xl shadow-2xl"
@@ -263,10 +464,186 @@ export default function SessionPage() {
           >
             <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
               <p className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Original Notes</p>
-              <button onClick={() => setShowNotes(false)} className="text-lg leading-none cursor-pointer transition-opacity hover:opacity-60" style={{ color: 'var(--color-parchment-muted)' }}>✕</button>
+              <div className="flex items-center gap-3">
+                {!editingPrompt && (
+                  <button
+                    onClick={() => setEditingPrompt(true)}
+                    className="flex items-center gap-1 text-xs font-semibold tracking-widest uppercase cursor-pointer transition-opacity hover:opacity-70"
+                    style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
+                    Edit
+                  </button>
+                )}
+                <button
+                  onClick={() => { if (!regenerating) setShowNotes(false) }}
+                  className="text-lg leading-none cursor-pointer transition-opacity hover:opacity-60"
+                  style={{ color: 'var(--color-parchment-muted)' }}
+                >✕</button>
+              </div>
             </div>
-            <div className="overflow-y-auto px-6 py-5">
-              <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-body)' }}>{session.prompt}</p>
+            <div className="overflow-y-auto px-6 py-5 flex flex-col gap-3">
+              {editingPrompt ? (
+                <>
+                  <textarea
+                    value={editPromptValue}
+                    onChange={e => setEditPromptValue(e.target.value)}
+                    autoFocus
+                    rows={12}
+                    className="w-full px-4 py-3 rounded-lg text-sm leading-relaxed resize-y focus:outline-none"
+                    style={{ ...inputStyle, minHeight: '200px' }}
+                    onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
+                    onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+                  />
+                  {regenError && <p className="text-xs" style={{ color: '#e07070' }}>{regenError}</p>}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleRegenerate}
+                      disabled={regenerating || !editPromptValue.trim()}
+                      className="flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40"
+                      style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)', color: '#0c0a14', border: '1px solid var(--color-gold-dim)' }}
+                    >
+                      {regenerating && (
+                        <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none">
+                          <circle cx="12" cy="12" r="10" stroke="rgba(0,0,0,0.3)" strokeWidth="3" />
+                          <path d="M12 2a10 10 0 0 1 10 10" stroke="#0c0a14" strokeWidth="3" strokeLinecap="round" />
+                        </svg>
+                      )}
+                      {regenerating ? 'Generating…' : 'Regenerate Chronicle'}
+                    </button>
+                    <button
+                      onClick={() => setEditingPrompt(false)}
+                      disabled={regenerating}
+                      className="px-5 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40"
+                      style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-body)' }}>
+                  {session.prompt}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add to Group modal */}
+      {showGroupModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
+          onClick={() => { if (!groupSaving) setShowGroupModal(false) }}
+        >
+          <div
+            className="relative w-full max-w-sm max-h-[70vh] flex flex-col rounded-2xl shadow-2xl"
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-bright)', boxShadow: '0 0 60px rgba(200,145,58,0.08), 0 24px 48px rgba(0,0,0,0.6)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
+              <p className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Add to Group</p>
+              <button onClick={() => setShowGroupModal(false)} className="text-lg leading-none cursor-pointer transition-opacity hover:opacity-60" style={{ color: 'var(--color-parchment-muted)' }}>✕</button>
+            </div>
+            <div className="overflow-y-auto flex-1 px-6 py-4">
+              {groupModalLoading ? (
+                <div className="flex justify-center py-8">
+                  <svg className="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="var(--color-border-bright)" strokeWidth="3" />
+                    <path d="M12 2a10 10 0 0 1 10 10" stroke="var(--color-gold)" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                </div>
+              ) : userGroups.length === 0 ? (
+                <p className="text-sm text-center py-8" style={{ color: 'var(--color-parchment-muted)' }}>
+                  No groups yet.{' '}
+                  <a href="/groups" className="underline" style={{ color: 'var(--color-gold)' }}>Create one</a>
+                </p>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {userGroups.map(g => (
+                    <label
+                      key={g.id}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer"
+                      style={{ background: pendingGroupIds.has(g.id) ? 'var(--color-surface-raised)' : 'transparent' }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={pendingGroupIds.has(g.id)}
+                        onChange={() => toggleGroup(g.id)}
+                        style={{ accentColor: 'var(--color-gold)' }}
+                      />
+                      <span className="text-sm" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}>{g.title}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 px-6 py-4 shrink-0" style={{ borderTop: '1px solid var(--color-border)' }}>
+              <button
+                onClick={handleSaveGroups}
+                disabled={groupSaving || groupModalLoading || userGroups.length === 0}
+                className="px-5 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40"
+                style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)', color: '#0c0a14', border: '1px solid var(--color-gold-dim)' }}
+              >
+                {groupSaving ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                onClick={() => setShowGroupModal(false)}
+                disabled={groupSaving}
+                className="px-5 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40"
+                style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Regeneration confirmation modal */}
+      {pendingRegen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)' }}
+        >
+          <div
+            className="relative w-full max-w-xl max-h-[85vh] flex flex-col rounded-2xl shadow-2xl"
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-bright)', boxShadow: '0 0 60px rgba(200,145,58,0.08), 0 24px 48px rgba(0,0,0,0.6)' }}
+          >
+            <div className="px-6 py-4 shrink-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
+              <p className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>New Chronicle Generated</p>
+              <p className="text-sm mt-1" style={{ color: 'var(--color-parchment-muted)' }}>Replace the existing summary and chronicle with the new version?</p>
+            </div>
+            <div className="overflow-y-auto px-6 py-5 flex flex-col gap-4">
+              <div>
+                <p className="text-xs font-semibold tracking-widest uppercase mb-2" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>New Summary</p>
+                <p className="text-sm leading-relaxed" style={{ color: 'var(--color-parchment)' }}>{pendingRegen.tldr}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold tracking-widest uppercase mb-2" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>New Chronicle</p>
+                <p className="text-sm leading-relaxed whitespace-pre-wrap line-clamp-6" style={{ color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}>{pendingRegen.story}</p>
+              </div>
+            </div>
+            <div className="flex gap-2 px-6 py-4 shrink-0" style={{ borderTop: '1px solid var(--color-border)' }}>
+              <button
+                onClick={confirmRegen}
+                className="px-5 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer"
+                style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)', color: '#0c0a14', border: '1px solid var(--color-gold-dim)' }}
+              >
+                Replace
+              </button>
+              <button
+                onClick={() => setPendingRegen(null)}
+                className="px-5 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer"
+                style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
+              >
+                Discard
+              </button>
             </div>
           </div>
         </div>
