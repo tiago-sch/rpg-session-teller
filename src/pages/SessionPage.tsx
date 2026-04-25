@@ -4,7 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../lib/queryClient'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { generateSession } from '../lib/gemini'
+import { generateSession, TONES } from '../lib/gemini'
 import CampaignSelect from '../components/CampaignSelect'
 import AppHeader from '../components/AppHeader'
 
@@ -16,6 +16,7 @@ interface Session {
   campaigns: { name: string } | null
   tldr: string | null
   prompt: string | null
+  tone: string | null
   generated_text: string | null
   created_at: string
   updated_at: string
@@ -25,6 +26,7 @@ interface PendingRegen {
   title: string
   campaignId: number | null
   prompt: string
+  toneId: string | null
   tldr: string
   story: string
 }
@@ -52,6 +54,7 @@ export default function SessionPage() {
   const [editTab, setEditTab] = useState<'notes' | 'chronicle'>('notes')
   const [editPromptValue, setEditPromptValue] = useState('')
   const [editFillGaps, setEditFillGaps] = useState(false)
+  const [editToneId, setEditToneId] = useState<string | null>(null)
   const [editTextValue, setEditTextValue] = useState('')
   const [editError, setEditError] = useState('')
   const [regenerating, setRegenerating] = useState(false)
@@ -75,7 +78,7 @@ export default function SessionPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('sessions')
-        .select('id, user_id, title, campaign_id, campaigns(name), tldr, prompt, generated_text, created_at, updated_at')
+        .select('id, user_id, title, campaign_id, campaigns(name), tldr, prompt, tone, generated_text, created_at, updated_at')
         .eq('public_id', public_id)
         .single()
       if (error || !data) throw new Error('Not found')
@@ -113,6 +116,7 @@ export default function SessionPage() {
     setEditPromptValue(session.prompt ?? '')
     setEditTextValue(session.generated_text ?? '')
     setEditFillGaps(false)
+    setEditToneId(session.tone ?? null)
     setEditTab('notes')
     setEditError('')
     setRegenError('')
@@ -124,11 +128,12 @@ export default function SessionPage() {
     setRegenerating(true)
     setRegenError('')
     try {
-      const result = await generateSession(editPromptValue.trim(), editFillGaps)
+      const result = await generateSession(editPromptValue.trim(), editFillGaps, editToneId)
       setPendingRegen({
         title: editTitle.trim(),
         campaignId: editCampaignId,
         prompt: editPromptValue.trim(),
+        toneId: editToneId,
         tldr: result.tldr,
         story: result.story,
       })
@@ -157,6 +162,7 @@ export default function SessionPage() {
           title: regen.title,
           campaign_id: regen.campaignId,
           prompt: regen.prompt,
+          tone: regen.toneId,
           tldr: regen.tldr,
           generated_text: regen.story,
         })
@@ -391,6 +397,33 @@ export default function SessionPage() {
                     >
                       When enabled, the AI can add plausible dialogue, describe environments, and connect scenes with brief passages. It won't invent new characters or plot events — only colour what's already there.
                     </div>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>
+                    Tone <span style={{ color: 'var(--color-mist)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {TONES.map(tone => {
+                      const active = editToneId === tone.id
+                      return (
+                        <button
+                          key={tone.id}
+                          type="button"
+                          disabled={regenerating}
+                          onClick={() => setEditToneId(active ? null : tone.id)}
+                          className="px-3 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all cursor-pointer disabled:opacity-50"
+                          style={{
+                            fontFamily: 'var(--font-display)',
+                            background: active ? 'var(--color-gold-dim)' : 'var(--color-ink-soft)',
+                            border: `1px solid ${active ? 'var(--color-gold)' : 'var(--color-border)'}`,
+                            color: active ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
+                          }}
+                        >
+                          {tone.label}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
                 {regenError && <p className="text-xs" style={{ color: '#e07070' }}>{regenError}</p>}

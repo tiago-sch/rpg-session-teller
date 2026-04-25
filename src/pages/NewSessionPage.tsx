@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { queryClient } from '../lib/queryClient'
-import { generateSession } from '../lib/gemini'
+import { generateSession, TONES } from '../lib/gemini'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import CampaignSelect from '../components/CampaignSelect'
@@ -15,11 +15,12 @@ export default function NewSessionPage() {
   const [campaignId, setCampaignId] = useState<number | null>(null)
   const [prompt, setPrompt] = useState('')
   const [fillGaps, setFillGaps] = useState(false)
+  const [toneId, setToneId] = useState<string | null>(null)
   const [error, setError] = useState('')
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const generated = await generateSession(prompt, fillGaps)
+      const generated = await generateSession(prompt, fillGaps, toneId)
       const { data, error: saveError } = await supabase
         .from('sessions')
         .insert({
@@ -27,6 +28,7 @@ export default function NewSessionPage() {
           title,
           campaign_id: campaignId,
           prompt,
+          tone: toneId,
           tldr: generated.tldr,
           generated_text: generated.story,
         })
@@ -177,6 +179,34 @@ export default function NewSessionPage() {
               >
                 When enabled, the AI can add plausible dialogue, describe environments, and connect scenes with brief passages. It won't invent new characters or plot events — only colour what's already there.
               </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>
+              Tone <span style={{ color: 'var(--color-mist)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {TONES.map(tone => {
+                const active = toneId === tone.id
+                return (
+                  <button
+                    key={tone.id}
+                    type="button"
+                    disabled={generating}
+                    onClick={() => setToneId(active ? null : tone.id)}
+                    className="px-3 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all cursor-pointer disabled:opacity-50"
+                    style={{
+                      fontFamily: 'var(--font-display)',
+                      background: active ? 'var(--color-gold-dim)' : 'var(--color-ink-soft)',
+                      border: `1px solid ${active ? 'var(--color-gold)' : 'var(--color-border)'}`,
+                      color: active ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
+                    }}
+                  >
+                    {tone.label}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
