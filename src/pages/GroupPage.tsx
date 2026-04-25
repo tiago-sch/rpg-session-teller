@@ -15,6 +15,7 @@ interface GroupData {
   created_at: string
   creatorName: string | null
   sessions: GroupSession[]
+  savedId: number | null
 }
 
 interface GroupSession {
@@ -64,7 +65,7 @@ export default function GroupPage() {
   const [search, setSearch] = useState('')
   const [addLoading, setAddLoading] = useState(false)
 
-  const queryKey = ['group', public_id] as const
+  const queryKey = ['group', public_id, user?.id ?? null] as const
 
   const { data: group, isLoading, isError } = useQuery<GroupData>({
     queryKey,
@@ -77,24 +78,55 @@ export default function GroupPage() {
 
       if (error || !gData) throw new Error('Not found')
 
-      const [{ data: profileData }, { data: gsData }] = await Promise.all([
+      const isOwnerLocal = user?.id === gData.user_id
+
+      const [{ data: profileData }, { data: gsData }, savedResult] = await Promise.all([
         supabase.from('profiles').select('display_name').eq('id', gData.user_id).single(),
         supabase
           .from('group_sessions')
           .select('session_id, sessions(id, public_id, title, tldr, campaigns(name), updated_at)')
           .eq('group_id', gData.id)
           .order('added_at', { ascending: false }),
+        user && !isOwnerLocal
+          ? supabase.from('saved_groups').select('id').eq('user_id', user.id).eq('group_public_id', public_id).maybeSingle()
+          : Promise.resolve({ data: null }),
       ])
 
       return {
         ...gData,
         creatorName: profileData?.display_name ?? null,
         sessions: (gsData as unknown as GroupSession[]) ?? [],
+        savedId: (savedResult as { data: { id: number } | null }).data?.id ?? null,
       }
     },
   })
 
   const isOwner = !!user && group?.user_id === user.id
+  const canSave = !!user && !isOwner
+
+  const saveGroupMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from('saved_groups')
+        .insert({ user_id: user!.id, group_public_id: public_id })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey })
+      queryClient.invalidateQueries({ queryKey: ['saved_groups_list', user?.id] })
+    },
+  })
+
+  const unsaveGroupMutation = useMutation({
+    mutationFn: async (savedId: number) => {
+      const { error } = await supabase.from('saved_groups').delete().eq('id', savedId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey })
+      queryClient.invalidateQueries({ queryKey: ['saved_groups_list', user?.id] })
+    },
+  })
 
   const editMutation = useMutation({
     mutationFn: async ({ title, description }: { title: string; description: string | null }) => {
@@ -214,6 +246,8 @@ export default function GroupPage() {
   const addSaving = saveSessionsMutation.isPending
   const editSaving = editMutation.isPending
 
+  const savingGroup = saveGroupMutation.isPending || unsaveGroupMutation.isPending
+
   const headerRight = group && !editing ? (
     <>
       {isOwner && (
@@ -229,6 +263,27 @@ export default function GroupPage() {
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
           </svg>
           <span className="hidden sm:inline">Edit</span>
+        </button>
+      )}
+      {canSave && (
+        <button
+          onClick={() => group.savedId ? unsaveGroupMutation.mutate(group.savedId) : saveGroupMutation.mutate()}
+          disabled={savingGroup}
+          className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer disabled:opacity-40"
+          style={{
+            fontFamily: 'var(--font-display)',
+            background: group.savedId ? 'var(--color-gold-dim)' : 'var(--color-surface-raised)',
+            border: `1px solid ${group.savedId ? 'var(--color-gold)' : 'var(--color-border)'}`,
+            color: group.savedId ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
+          }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"
+              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+              fill={group.savedId ? 'currentColor' : 'none'}
+            />
+          </svg>
+          <span className="hidden sm:inline">{group.savedId ? 'Saved' : 'Save'}</span>
         </button>
       )}
       <button
