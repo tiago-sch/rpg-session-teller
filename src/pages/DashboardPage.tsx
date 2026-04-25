@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { queryClient } from '../lib/queryClient'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import AppHeader from '../components/AppHeader'
@@ -24,24 +26,86 @@ export default function DashboardPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
 
-  const [campaigns, setCampaigns] = useState<Campaign[]>([])
-  const [sessions, setSessions] = useState<Session[]>([])
   const [selectedCampaign, setSelectedCampaign] = useState<number | 'all' | 'none'>('all')
-  const [loadingSessions, setLoadingSessions] = useState(true)
-  const [loadingCampaigns, setLoadingCampaigns] = useState(true)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
   const [showModal, setShowModal] = useState(false)
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
-  const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
 
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null)
   const [editName, setEditName] = useState('')
   const [editDesc, setEditDesc] = useState('')
-  const [editSaving, setEditSaving] = useState(false)
   const [editError, setEditError] = useState('')
+
+  const { data: campaigns = [], isLoading: loadingCampaigns } = useQuery<Campaign[]>({
+    queryKey: ['campaigns', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('campaigns')
+        .select('id, name, description')
+        .eq('user_id', user!.id)
+        .order('name')
+      return (data as Campaign[]) ?? []
+    },
+    enabled: !!user,
+  })
+
+  const { data: sessions = [], isLoading: loadingSessions } = useQuery<Session[]>({
+    queryKey: ['sessions', user?.id, selectedCampaign],
+    queryFn: async () => {
+      let query = supabase
+        .from('sessions')
+        .select('public_id, title, campaign_id, campaigns(name), tldr, created_at, updated_at')
+        .eq('user_id', user!.id)
+        .order('created_at', { ascending: false })
+
+      if (selectedCampaign === 'none') query = query.is('campaign_id', null)
+      else if (selectedCampaign !== 'all') query = query.eq('campaign_id', selectedCampaign)
+
+      const { data } = await query
+      return (data as unknown as Session[]) ?? []
+    },
+    enabled: !!user,
+  })
+
+  const createMutation = useMutation({
+    mutationFn: async ({ name, description }: { name: string; description: string | null }) => {
+      const { error } = await supabase
+        .from('campaigns')
+        .insert({ user_id: user!.id, name, description })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', user?.id] })
+      setNewName('')
+      setNewDesc('')
+      setShowModal(false)
+    },
+    onError: (err) => {
+      setCreateError(err instanceof Error ? err.message : 'Failed to create campaign.')
+    },
+  })
+
+  const editMutation = useMutation({
+    mutationFn: async ({ id, name, description }: { id: number; name: string; description: string | null }) => {
+      const { error } = await supabase
+        .from('campaigns')
+        .update({ name, description })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['campaigns', user?.id] })
+      // also refresh sessions since campaign names appear there
+      queryClient.invalidateQueries({ queryKey: ['sessions', user?.id] })
+      setEditingCampaign(null)
+    },
+    onError: (err) => {
+      setEditError(err instanceof Error ? err.message : 'Failed to update campaign.')
+    },
+  })
 
   const openEdit = (c: Campaign) => {
     setEditingCampaign(c)
@@ -50,79 +114,17 @@ export default function DashboardPage() {
     setEditError('')
   }
 
-  const handleEditCampaign = async (e: React.FormEvent) => {
+  const handleCreateCampaign = (e: React.FormEvent) => {
+    e.preventDefault()
+    setCreateError('')
+    createMutation.mutate({ name: newName.trim(), description: newDesc.trim() || null })
+  }
+
+  const handleEditCampaign = (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingCampaign) return
     setEditError('')
-    setEditSaving(true)
-    const { error } = await supabase
-      .from('campaigns')
-      .update({ name: editName.trim(), description: editDesc.trim() || null })
-      .eq('id', editingCampaign.id)
-    if (error) {
-      setEditError(error.message)
-    } else {
-      setCampaigns(cs =>
-        cs.map(c => c.id === editingCampaign.id
-          ? { ...c, name: editName.trim(), description: editDesc.trim() || null }
-          : c
-        ).sort((a, b) => a.name.localeCompare(b.name))
-      )
-      setEditingCampaign(null)
-    }
-    setEditSaving(false)
-  }
-
-  useEffect(() => {
-    supabase
-      .from('campaigns')
-      .select('id, name, description')
-      .eq('user_id', user!.id)
-      .order('name')
-      .then(({ data }) => {
-        setCampaigns(data ?? [])
-        setLoadingCampaigns(false)
-      })
-  }, [])
-
-  useEffect(() => {
-    setLoadingSessions(true)
-    let query = supabase
-      .from('sessions')
-      .select('public_id, title, campaign_id, campaigns(name), tldr, created_at, updated_at')
-      .eq('user_id', user!.id)
-      .order('created_at', { ascending: false })
-
-    if (selectedCampaign === 'none') {
-      query = query.is('campaign_id', null)
-    } else if (selectedCampaign !== 'all') {
-      query = query.eq('campaign_id', selectedCampaign)
-    }
-
-    query.then(({ data }) => {
-      setSessions((data as unknown as Session[]) ?? [])
-      setLoadingSessions(false)
-    })
-  }, [selectedCampaign])
-
-  const handleCreateCampaign = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setCreateError('')
-    setCreating(true)
-    const { data, error } = await supabase
-      .from('campaigns')
-      .insert({ user_id: user!.id, name: newName.trim(), description: newDesc.trim() || null })
-      .select('id, name, description')
-      .single()
-    if (error) {
-      setCreateError(error.message)
-    } else {
-      setCampaigns(c => [...c, data].sort((a, b) => a.name.localeCompare(b.name)))
-      setNewName('')
-      setNewDesc('')
-      setShowModal(false)
-    }
-    setCreating(false)
+    editMutation.mutate({ id: editingCampaign.id, name: editName.trim(), description: editDesc.trim() || null })
   }
 
   const isLoading = loadingSessions || loadingCampaigns
@@ -199,7 +201,6 @@ export default function DashboardPage() {
                 : (campaigns.find(c => c.id === selectedCampaign)?.name ?? '')}
             </h1>
             <div className="flex items-center gap-2 shrink-0">
-              {/* Edit campaign shortcut on mobile when a specific campaign is selected */}
               {selectedCampaign !== 'all' && selectedCampaign !== 'none' && (
                 <button
                   onClick={() => { const c = campaigns.find(x => x.id === selectedCampaign); if (c) openEdit(c) }}
@@ -241,7 +242,6 @@ export default function DashboardPage() {
             })()
           )}
 
-          {/* Loading */}
           {isLoading && (
             <div className="flex justify-center py-16">
               <svg className="animate-spin" width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -251,7 +251,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Empty state */}
           {!isLoading && sessions.length === 0 && (
             <div className="flex flex-col items-center justify-center text-center gap-4 py-20">
               <div
@@ -487,11 +486,11 @@ export default function DashboardPage() {
               {createError && <p className="text-xs" style={{ color: '#e07070' }}>{createError}</p>}
               <button
                 type="submit"
-                disabled={creating}
+                disabled={createMutation.isPending}
                 className="py-2.5 rounded-lg text-sm font-semibold tracking-widest uppercase transition-all cursor-pointer disabled:opacity-40"
                 style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)', color: '#0c0a14', border: '1px solid var(--color-gold-dim)' }}
               >
-                {creating ? 'Creating…' : 'Create Campaign'}
+                {createMutation.isPending ? 'Creating…' : 'Create Campaign'}
               </button>
             </form>
           </div>
@@ -546,11 +545,11 @@ export default function DashboardPage() {
               {editError && <p className="text-xs" style={{ color: '#e07070' }}>{editError}</p>}
               <button
                 type="submit"
-                disabled={editSaving}
+                disabled={editMutation.isPending}
                 className="py-2.5 rounded-lg text-sm font-semibold tracking-widest uppercase transition-all cursor-pointer disabled:opacity-40"
                 style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)', color: '#0c0a14', border: '1px solid var(--color-gold-dim)' }}
               >
-                {editSaving ? 'Saving…' : 'Save Changes'}
+                {editMutation.isPending ? 'Saving…' : 'Save Changes'}
               </button>
             </form>
           </div>
@@ -579,11 +578,7 @@ function Chip({ label, active, onClick, muted }: { label: string; active: boolea
 }
 
 function SidebarItem({ label, active, onClick, onEdit, muted }: {
-  label: string
-  active: boolean
-  onClick: () => void
-  onEdit?: () => void
-  muted?: boolean
+  label: string; active: boolean; onClick: () => void; onEdit?: () => void; muted?: boolean
 }) {
   const [hovered, setHovered] = useState(false)
   return (
@@ -599,10 +594,7 @@ function SidebarItem({ label, active, onClick, onEdit, muted }: {
       <button
         onClick={onClick}
         className="flex-1 text-left px-3 py-2 text-sm cursor-pointer"
-        style={{
-          fontFamily: 'var(--font-display)',
-          color: active ? 'var(--color-parchment)' : muted ? 'var(--color-mist)' : 'var(--color-parchment-muted)',
-        }}
+        style={{ fontFamily: 'var(--font-display)', color: active ? 'var(--color-parchment)' : muted ? 'var(--color-mist)' : 'var(--color-parchment-muted)' }}
       >
         {label}
       </button>

@@ -1,16 +1,20 @@
-import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { queryClient } from '../lib/queryClient'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import AppHeader from '../components/AppHeader'
 
-interface Group {
+interface GroupData {
   id: number
   public_id: string
   user_id: string
   title: string
   description: string | null
   created_at: string
+  creatorName: string | null
+  sessions: GroupSession[]
 }
 
 interface GroupSession {
@@ -25,7 +29,7 @@ interface GroupSession {
   }
 }
 
-interface UserSession {
+interface PickableSession {
   id: number
   public_id: string
   title: string
@@ -41,46 +45,37 @@ const inputStyle = {
 
 export default function GroupPage() {
   const { public_id } = useParams<{ public_id: string }>()
+  const navigate = useNavigate()
   const { user } = useAuth()
 
-  const [group, setGroup] = useState<Group | null>(null)
-  const [creatorName, setCreatorName] = useState<string | null>(null)
-  const [sessions, setSessions] = useState<GroupSession[]>([])
-  const [loading, setLoading] = useState(true)
-  const [notFound, setNotFound] = useState(false)
   const [copied, setCopied] = useState(false)
 
   // edit group
   const [editing, setEditing] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editDesc, setEditDesc] = useState('')
-  const [editSaving, setEditSaving] = useState(false)
 
   // add sessions modal
   const [showAddModal, setShowAddModal] = useState(false)
-  const [userSessions, setUserSessions] = useState<UserSession[]>([])
+  const [ownSessions, setOwnSessions] = useState<PickableSession[]>([])
+  const [savedSessions, setSavedSessions] = useState<PickableSession[]>([])
   const [inGroupIds, setInGroupIds] = useState<Set<number>>(new Set())
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set())
+  const [search, setSearch] = useState('')
   const [addLoading, setAddLoading] = useState(false)
-  const [addSaving, setAddSaving] = useState(false)
 
-  const isOwner = !!user && group?.user_id === user.id
+  const queryKey = ['group', public_id] as const
 
-  useEffect(() => {
-    async function load() {
+  const { data: group, isLoading, isError } = useQuery<GroupData>({
+    queryKey,
+    queryFn: async () => {
       const { data: gData, error } = await supabase
         .from('session_groups')
         .select('id, public_id, user_id, title, description, created_at')
         .eq('public_id', public_id)
         .single()
 
-      if (error || !gData) {
-        setNotFound(true)
-        setLoading(false)
-        return
-      }
-
-      setGroup(gData as Group)
+      if (error || !gData) throw new Error('Not found')
 
       const [{ data: profileData }, { data: gsData }] = await Promise.all([
         supabase.from('profiles').select('display_name').eq('id', gData.user_id).single(),
@@ -91,47 +86,99 @@ export default function GroupPage() {
           .order('added_at', { ascending: false }),
       ])
 
-      setCreatorName(profileData?.display_name ?? null)
-      setSessions((gsData as unknown as GroupSession[]) ?? [])
-      setLoading(false)
-    }
-    load()
-  }, [public_id])
+      return {
+        ...gData,
+        creatorName: profileData?.display_name ?? null,
+        sessions: (gsData as unknown as GroupSession[]) ?? [],
+      }
+    },
+  })
 
-  const handleEditSave = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!group || !editTitle.trim()) return
-    setEditSaving(true)
-    const { error } = await supabase
-      .from('session_groups')
-      .update({ title: editTitle.trim(), description: editDesc.trim() || null })
-      .eq('id', group.id)
-    if (!error) {
-      setGroup(g => g ? { ...g, title: editTitle.trim(), description: editDesc.trim() || null } : g)
+  const isOwner = !!user && group?.user_id === user.id
+
+  const editMutation = useMutation({
+    mutationFn: async ({ title, description }: { title: string; description: string | null }) => {
+      const { error } = await supabase
+        .from('session_groups')
+        .update({ title, description })
+        .eq('id', group!.id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey })
+      queryClient.invalidateQueries({ queryKey: ['groups', user?.id] })
       setEditing(false)
-    }
-    setEditSaving(false)
+    },
+  })
+
+  const saveSessionsMutation = useMutation({
+    mutationFn: async ({ toAdd, toRemove }: { toAdd: number[]; toRemove: number[] }) => {
+      await Promise.all([
+        toAdd.length > 0
+          ? supabase.from('group_sessions').insert(toAdd.map(sid => ({ group_id: group!.id, session_id: sid })))
+          : Promise.resolve(),
+        ...toRemove.map(sid =>
+          supabase.from('group_sessions').delete().eq('group_id', group!.id).eq('session_id', sid)
+        ),
+      ])
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey })
+      setInGroupIds(new Set(pendingIds))
+      setShowAddModal(false)
+    },
+  })
+
+  const removeMutation = useMutation({
+    mutationFn: async (sessionId: number) => {
+      const { error } = await supabase
+        .from('group_sessions')
+        .delete()
+        .eq('group_id', group!.id)
+        .eq('session_id', sessionId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey })
+    },
+  })
+
+  const handleEditSave = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editTitle.trim()) return
+    editMutation.mutate({ title: editTitle.trim(), description: editDesc.trim() || null })
   }
 
   const openAddModal = async () => {
     if (!group || !user) return
     setAddLoading(true)
     setShowAddModal(true)
+    setSearch('')
 
-    const [{ data: allSessions }, { data: currentGs }] = await Promise.all([
+    const [{ data: ownData }, { data: currentGs }, { data: savedData }] = await Promise.all([
       supabase
         .from('sessions')
         .select('id, public_id, title, campaigns(name)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false }),
-      supabase
-        .from('group_sessions')
-        .select('session_id')
-        .eq('group_id', group.id),
+      supabase.from('group_sessions').select('session_id').eq('group_id', group.id),
+      supabase.from('saved_sessions').select('session_public_id').eq('user_id', user.id),
     ])
 
+    const savedPubIds = (savedData ?? []).map((s: { session_public_id: string }) => s.session_public_id)
+    let savedSessionsData: PickableSession[] = []
+    if (savedPubIds.length > 0) {
+      const { data } = await supabase
+        .from('sessions')
+        .select('id, public_id, title, campaigns(name)')
+        .in('public_id', savedPubIds)
+        .order('created_at', { ascending: false })
+      savedSessionsData = (data as unknown as PickableSession[]) ?? []
+    }
+
     const currentIds = new Set((currentGs ?? []).map((r: { session_id: number }) => r.session_id))
-    setUserSessions((allSessions as unknown as UserSession[]) ?? [])
+    setOwnSessions((ownData as unknown as PickableSession[]) ?? [])
+    setSavedSessions(savedSessionsData)
     setInGroupIds(currentIds)
     setPendingIds(new Set(currentIds))
     setAddLoading(false)
@@ -145,39 +192,10 @@ export default function GroupPage() {
     })
   }
 
-  const handleSaveGroupSessions = async () => {
-    if (!group) return
-    setAddSaving(true)
-
+  const handleSaveGroupSessions = () => {
     const toAdd = [...pendingIds].filter(id => !inGroupIds.has(id))
     const toRemove = [...inGroupIds].filter(id => !pendingIds.has(id))
-
-    await Promise.all([
-      toAdd.length > 0
-        ? supabase.from('group_sessions').insert(toAdd.map(sid => ({ group_id: group.id, session_id: sid })))
-        : Promise.resolve(),
-      ...toRemove.map(sid =>
-        supabase.from('group_sessions').delete().eq('group_id', group.id).eq('session_id', sid)
-      ),
-    ])
-
-    // Reload sessions list
-    const { data: gsData } = await supabase
-      .from('group_sessions')
-      .select('session_id, sessions(id, public_id, title, tldr, campaigns(name), updated_at)')
-      .eq('group_id', group.id)
-      .order('added_at', { ascending: false })
-
-    setSessions((gsData as unknown as GroupSession[]) ?? [])
-    setInGroupIds(new Set(pendingIds))
-    setAddSaving(false)
-    setShowAddModal(false)
-  }
-
-  const removeSession = async (sessionId: number) => {
-    if (!group) return
-    await supabase.from('group_sessions').delete().eq('group_id', group.id).eq('session_id', sessionId)
-    setSessions(prev => prev.filter(gs => gs.session_id !== sessionId))
+    saveSessionsMutation.mutate({ toAdd, toRemove })
   }
 
   const handleCopy = async () => {
@@ -185,6 +203,16 @@ export default function GroupPage() {
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
+
+  const goToSession = (sessionPublicId: string) => {
+    if (!group) return
+    navigate(`/s/${sessionPublicId}`, {
+      state: { fromGroup: { public_id: group.public_id, title: group.title } },
+    })
+  }
+
+  const addSaving = saveSessionsMutation.isPending
+  const editSaving = editMutation.isPending
 
   const headerRight = group && !editing ? (
     <>
@@ -222,6 +250,13 @@ export default function GroupPage() {
     </>
   ) : undefined
 
+  const q = search.toLowerCase()
+  const match = (s: PickableSession) =>
+    (s.title + ' ' + (s.campaigns?.name ?? '')).toLowerCase().includes(q)
+  const filteredOwn = ownSessions.filter(match)
+  const filteredSaved = savedSessions.filter(match)
+  const selectedCount = pendingIds.size
+
   return (
     <div
       className="min-h-screen flex flex-col"
@@ -230,7 +265,7 @@ export default function GroupPage() {
       <AppHeader right={headerRight} />
 
       <main className="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12 flex flex-col gap-8">
-        {loading && (
+        {isLoading && (
           <div className="flex justify-center pt-24">
             <svg className="animate-spin" width="24" height="24" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="10" stroke="var(--color-border-bright)" strokeWidth="3" />
@@ -239,13 +274,13 @@ export default function GroupPage() {
           </div>
         )}
 
-        {notFound && (
+        {isError && (
           <div className="text-center pt-24">
             <p style={{ color: 'var(--color-parchment-muted)' }}>This group could not be found.</p>
           </div>
         )}
 
-        {group && !loading && (
+        {group && !isLoading && (
           <>
             {editing ? (
               <form onSubmit={handleEditSave} className="flex flex-col gap-3">
@@ -309,8 +344,8 @@ export default function GroupPage() {
                   <p className="text-base mb-2" style={{ color: 'var(--color-parchment-muted)' }}>{group.description}</p>
                 )}
                 <p className="text-xs" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-display)' }}>
-                  {creatorName && <>By {creatorName} · </>}
-                  {sessions.length} {sessions.length === 1 ? 'session' : 'sessions'}
+                  {group.creatorName && <>By {group.creatorName} · </>}
+                  {group.sessions.length} {group.sessions.length === 1 ? 'session' : 'sessions'}
                 </p>
               </div>
             )}
@@ -335,32 +370,33 @@ export default function GroupPage() {
               </div>
             )}
 
-            {sessions.length === 0 && (
+            {group.sessions.length === 0 && (
               <div className="text-center py-12">
                 <p className="text-sm" style={{ color: 'var(--color-parchment-muted)' }}>No sessions in this group yet.</p>
               </div>
             )}
 
-            {sessions.length > 0 && (
+            {group.sessions.length > 0 && (
               <div className="flex flex-col gap-3">
-                {sessions.map(gs => (
+                {group.sessions.map(gs => (
                   <div
                     key={gs.session_id}
                     className="rounded-xl px-5 py-4 flex flex-col gap-2"
                     style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <a
-                        href={`/s/${gs.sessions.public_id}`}
-                        className="font-semibold leading-snug hover:underline"
-                        style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold-light)' }}
+                      <button
+                        onClick={() => goToSession(gs.sessions.public_id)}
+                        className="text-left font-semibold leading-snug hover:underline cursor-pointer"
+                        style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold-light)', background: 'none', border: 'none', padding: 0 }}
                       >
                         {gs.sessions.title}
-                      </a>
+                      </button>
                       {isOwner && (
                         <button
-                          onClick={() => removeSession(gs.session_id)}
-                          className="shrink-0 cursor-pointer transition-opacity hover:opacity-100"
+                          onClick={() => removeMutation.mutate(gs.session_id)}
+                          disabled={removeMutation.isPending}
+                          className="shrink-0 cursor-pointer transition-opacity hover:opacity-100 disabled:opacity-30"
                           style={{ color: 'var(--color-parchment-muted)', opacity: 0.5 }}
                           title="Remove from group"
                         >
@@ -385,7 +421,6 @@ export default function GroupPage() {
         )}
       </main>
 
-      {/* Add Sessions modal */}
       {showAddModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-4"
@@ -393,51 +428,104 @@ export default function GroupPage() {
           onClick={() => { if (!addSaving) setShowAddModal(false) }}
         >
           <div
-            className="relative w-full max-w-lg max-h-[80vh] flex flex-col rounded-2xl shadow-2xl"
-            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-bright)', boxShadow: '0 0 60px rgba(200,145,58,0.08), 0 24px 48px rgba(0,0,0,0.6)' }}
+            className="relative w-full max-w-lg flex flex-col rounded-2xl shadow-2xl"
+            style={{
+              background: 'var(--color-surface)',
+              border: '1px solid var(--color-border-bright)',
+              boxShadow: '0 0 60px rgba(200,145,58,0.08), 0 24px 48px rgba(0,0,0,0.6)',
+              maxHeight: 'min(85vh, 640px)',
+            }}
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
-              <p className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Add Sessions</p>
-              <button onClick={() => setShowAddModal(false)} className="text-lg leading-none cursor-pointer transition-opacity hover:opacity-60" style={{ color: 'var(--color-parchment-muted)' }}>✕</button>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>
+                  Add Sessions
+                </p>
+                {selectedCount > 0 && (
+                  <span
+                    className="text-xs px-2 py-0.5 rounded-full"
+                    style={{ background: 'var(--color-gold-dim)', color: '#0c0a14', fontFamily: 'var(--font-display)', fontWeight: 600 }}
+                  >
+                    {selectedCount}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="text-lg leading-none cursor-pointer transition-opacity hover:opacity-60"
+                style={{ color: 'var(--color-parchment-muted)' }}
+              >✕</button>
             </div>
 
-            <div className="overflow-y-auto flex-1 px-6 py-4">
+            <div className="px-6 py-3 shrink-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
+              <div className="relative">
+                <svg
+                  width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                  style={{ color: 'var(--color-parchment-muted)' }}
+                >
+                  <circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="2"/>
+                  <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search chronicles…"
+                  autoFocus
+                  className="w-full pl-9 pr-4 py-2 rounded-lg text-sm focus:outline-none"
+                  style={inputStyle}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+                />
+              </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1 py-3">
               {addLoading ? (
-                <div className="flex justify-center py-8">
+                <div className="flex justify-center py-10">
                   <svg className="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none">
                     <circle cx="12" cy="12" r="10" stroke="var(--color-border-bright)" strokeWidth="3" />
                     <path d="M12 2a10 10 0 0 1 10 10" stroke="var(--color-gold)" strokeWidth="3" strokeLinecap="round" />
                   </svg>
                 </div>
-              ) : userSessions.length === 0 ? (
-                <p className="text-sm text-center py-8" style={{ color: 'var(--color-parchment-muted)' }}>No sessions found.</p>
+              ) : filteredOwn.length === 0 && filteredSaved.length === 0 ? (
+                <p className="text-sm text-center py-10" style={{ color: 'var(--color-parchment-muted)' }}>
+                  {search ? 'No chronicles match your search.' : 'No chronicles found.'}
+                </p>
               ) : (
-                <div className="flex flex-col gap-1">
-                  {userSessions.map(s => (
-                    <label
-                      key={s.id}
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer transition-colors"
-                      style={{ background: pendingIds.has(s.id) ? 'var(--color-surface-raised)' : 'transparent' }}
-                      onMouseEnter={e => { if (!pendingIds.has(s.id)) e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
-                      onMouseLeave={e => { if (!pendingIds.has(s.id)) e.currentTarget.style.background = 'transparent' }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={pendingIds.has(s.id)}
-                        onChange={() => toggleSession(s.id)}
-                        className="shrink-0"
-                        style={{ accentColor: 'var(--color-gold)' }}
-                      />
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-sm font-medium truncate" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}>{s.title}</span>
-                        {s.campaigns?.name && (
-                          <span className="text-xs" style={{ color: 'var(--color-gold)', opacity: 0.8 }}>{s.campaigns.name}</span>
-                        )}
-                      </div>
-                    </label>
-                  ))}
-                </div>
+                <>
+                  {filteredOwn.length > 0 && (
+                    <div className="mb-2">
+                      <p
+                        className="px-6 pb-1 text-xs font-semibold tracking-widest uppercase"
+                        style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)', opacity: 0.6 }}
+                      >
+                        My Chronicles
+                      </p>
+                      {filteredOwn.map(s => (
+                        <SessionRow key={s.id} session={s} checked={pendingIds.has(s.id)} onToggle={() => toggleSession(s.id)} />
+                      ))}
+                    </div>
+                  )}
+                  {filteredSaved.length > 0 && (
+                    <div>
+                      {filteredOwn.length > 0 && (
+                        <div className="mx-6 my-2 h-px" style={{ background: 'var(--color-border)' }} />
+                      )}
+                      <p
+                        className="px-6 pb-1 text-xs font-semibold tracking-widest uppercase"
+                        style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)', opacity: 0.6 }}
+                      >
+                        Saved Chronicles
+                      </p>
+                      {filteredSaved.map(s => (
+                        <SessionRow key={s.id} session={s} checked={pendingIds.has(s.id)} onToggle={() => toggleSession(s.id)} />
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -463,6 +551,33 @@ export default function GroupPage() {
         </div>
       )}
     </div>
+  )
+}
+
+function SessionRow({ session, checked, onToggle }: { session: PickableSession; checked: boolean; onToggle: () => void }) {
+  return (
+    <label
+      className="flex items-center gap-3 px-6 py-2.5 cursor-pointer transition-colors"
+      style={{ background: checked ? 'rgba(200,145,58,0.06)' : 'transparent' }}
+      onMouseEnter={e => { if (!checked) e.currentTarget.style.background = 'rgba(255,255,255,0.03)' }}
+      onMouseLeave={e => { if (!checked) e.currentTarget.style.background = 'transparent' }}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        className="shrink-0"
+        style={{ accentColor: 'var(--color-gold)', width: '15px', height: '15px' }}
+      />
+      <div className="flex flex-col min-w-0">
+        <span className="text-sm leading-snug truncate" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}>
+          {session.title}
+        </span>
+        {session.campaigns?.name && (
+          <span className="text-xs" style={{ color: 'var(--color-gold)', opacity: 0.8 }}>{session.campaigns.name}</span>
+        )}
+      </div>
+    </label>
   )
 }
 

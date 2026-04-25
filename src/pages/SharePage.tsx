@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useState } from 'react'
+import { useParams, useLocation, Link } from 'react-router-dom'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { queryClient } from '../lib/queryClient'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import AppHeader from '../components/AppHeader'
 
-interface PublicSession {
+interface SessionPublicData {
   title: string
   campaign_name: string | null
   tldr: string | null
@@ -12,6 +14,8 @@ interface PublicSession {
   updated_at: string
   creator_name: string | null
   owner_id: string
+  savedId: number | null
+  savedNote: string | null
 }
 
 const inputStyle = {
@@ -24,34 +28,24 @@ const inputStyle = {
 export default function SharePage() {
   const { public_id } = useParams<{ public_id: string }>()
   const { user } = useAuth()
+  const location = useLocation()
+  const fromGroup = (location.state as { fromGroup?: { public_id: string; title: string } } | null)?.fromGroup
 
-  const [session, setSession] = useState<PublicSession | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [notFound, setNotFound] = useState(false)
-
-  // save state
-  const [savedId, setSavedId] = useState<number | null>(null)
-  const [savedNote, setSavedNote] = useState<string | null>(null)
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [noteInput, setNoteInput] = useState('')
-  const [saving, setSaving] = useState(false)
 
-  const isOwner = !!user && session?.owner_id === user.id
-  const canSave = !!user && !isOwner
+  const queryKey = ['session_public', public_id, user?.id ?? null] as const
 
-  useEffect(() => {
-    async function load() {
+  const { data, isLoading, isError } = useQuery<SessionPublicData>({
+    queryKey,
+    queryFn: async () => {
       const { data: sessionData, error } = await supabase
         .from('sessions')
         .select('title, campaigns(name), tldr, generated_text, updated_at, user_id')
         .eq('public_id', public_id)
         .single()
 
-      if (error || !sessionData) {
-        setNotFound(true)
-        setLoading(false)
-        return
-      }
+      if (error || !sessionData) throw new Error('Not found')
 
       const sd = sessionData as typeof sessionData & { campaigns: { name: string } | null }
 
@@ -67,7 +61,7 @@ export default function SharePage() {
           : Promise.resolve({ data: null }),
       ])
 
-      setSession({
+      return {
         title: sd.title,
         campaign_name: sd.campaigns?.name ?? null,
         tldr: sd.tldr,
@@ -75,58 +69,55 @@ export default function SharePage() {
         updated_at: sd.updated_at,
         creator_name: profileData?.display_name ?? null,
         owner_id: sessionData.user_id,
-      })
-
-      if (savedResult.data) {
-        setSavedId(savedResult.data.id)
-        setSavedNote(savedResult.data.note ?? null)
+        savedId: savedResult.data?.id ?? null,
+        savedNote: savedResult.data?.note ?? null,
       }
+    },
+  })
 
-      setLoading(false)
-    }
-    load()
-  }, [public_id, user])
+  const isOwner = !!user && data?.owner_id === user.id
+  const canSave = !!user && !isOwner
+
+  const saveMutation = useMutation({
+    mutationFn: async ({ savedId, note }: { savedId: number | null; note: string | null }) => {
+      if (savedId) {
+        const { error } = await supabase
+          .from('saved_sessions')
+          .update({ note })
+          .eq('id', savedId)
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('saved_sessions')
+          .insert({ user_id: user!.id, session_public_id: public_id, note })
+        if (error) throw error
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey })
+      queryClient.invalidateQueries({ queryKey: ['saved_sessions', user?.id] })
+      setShowSaveModal(false)
+    },
+  })
+
+  const unsaveMutation = useMutation({
+    mutationFn: async (savedId: number) => {
+      const { error } = await supabase.from('saved_sessions').delete().eq('id', savedId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey })
+      queryClient.invalidateQueries({ queryKey: ['saved_sessions', user?.id] })
+      setShowSaveModal(false)
+    },
+  })
 
   const openSaveModal = () => {
-    setNoteInput(savedNote ?? '')
+    setNoteInput(data?.savedNote ?? '')
     setShowSaveModal(true)
   }
 
-  const handleSave = async () => {
-    if (!user) return
-    setSaving(true)
-    if (savedId) {
-      // update existing
-      const { error } = await supabase
-        .from('saved_sessions')
-        .update({ note: noteInput.trim() || null })
-        .eq('id', savedId)
-      if (!error) {
-        setSavedNote(noteInput.trim() || null)
-        setShowSaveModal(false)
-      }
-    } else {
-      const { data, error } = await supabase
-        .from('saved_sessions')
-        .insert({ user_id: user.id, session_public_id: public_id, note: noteInput.trim() || null })
-        .select('id, note')
-        .single()
-      if (!error && data) {
-        setSavedId(data.id)
-        setSavedNote(data.note ?? null)
-        setShowSaveModal(false)
-      }
-    }
-    setSaving(false)
-  }
-
-  const handleUnsave = async () => {
-    if (!savedId) return
-    await supabase.from('saved_sessions').delete().eq('id', savedId)
-    setSavedId(null)
-    setSavedNote(null)
-    setShowSaveModal(false)
-  }
+  const saving = saveMutation.isPending || unsaveMutation.isPending
 
   const headerRight = canSave ? (
     <button
@@ -134,18 +125,18 @@ export default function SharePage() {
       className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer"
       style={{
         fontFamily: 'var(--font-display)',
-        background: savedId ? 'var(--color-gold-dim)' : 'var(--color-surface-raised)',
-        border: `1px solid ${savedId ? 'var(--color-gold)' : 'var(--color-border)'}`,
-        color: savedId ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
+        background: data?.savedId ? 'var(--color-gold-dim)' : 'var(--color-surface-raised)',
+        border: `1px solid ${data?.savedId ? 'var(--color-gold)' : 'var(--color-border)'}`,
+        color: data?.savedId ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
       }}
     >
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
         <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"
           stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-          fill={savedId ? 'currentColor' : 'none'}
+          fill={data?.savedId ? 'currentColor' : 'none'}
         />
       </svg>
-      <span className="hidden sm:inline">{savedId ? 'Saved' : 'Save'}</span>
+      <span className="hidden sm:inline">{data?.savedId ? 'Saved' : 'Save'}</span>
     </button>
   ) : undefined
 
@@ -157,7 +148,7 @@ export default function SharePage() {
       <AppHeader right={headerRight} />
 
       <main className="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-        {loading && (
+        {isLoading && (
           <div className="flex justify-center pt-24">
             <svg className="animate-spin" width="24" height="24" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="10" stroke="var(--color-border-bright)" strokeWidth="3" />
@@ -166,29 +157,41 @@ export default function SharePage() {
           </div>
         )}
 
-        {notFound && (
+        {isError && (
           <div className="text-center pt-24">
             <p style={{ color: 'var(--color-parchment-muted)' }}>This chronicle could not be found.</p>
           </div>
         )}
 
-        {session && (
+        {data && (
           <div className="flex flex-col gap-8">
+            {fromGroup && (
+              <Link
+                to={`/g/${fromGroup.public_id}`}
+                className="flex items-center gap-1.5 -mb-4 w-fit transition-opacity hover:opacity-70"
+                style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)', fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', textDecoration: 'none' }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+                  <path d="M19 12H5M12 5l-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                {fromGroup.title}
+              </Link>
+            )}
             <div>
-              {session.campaign_name && (
+              {data.campaign_name && (
                 <p className="text-xs font-semibold tracking-widest uppercase mb-2" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>
-                  {session.campaign_name}
+                  {data.campaign_name}
                 </p>
               )}
               <h1
                 className="text-2xl sm:text-3xl font-semibold tracking-wide mb-3"
                 style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}
               >
-                {session.title}
+                {data.title}
               </h1>
               <p className="text-xs" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-display)' }}>
-                {session.creator_name && <>By {session.creator_name} · </>}
-                Updated {fmt(session.updated_at)}
+                {data.creator_name && <>By {data.creator_name} · </>}
+                Updated {fmt(data.updated_at)}
               </p>
             </div>
 
@@ -200,18 +203,18 @@ export default function SharePage() {
               <div className="flex-1 h-px" style={{ background: 'var(--color-border)' }} />
             </div>
 
-            {session.tldr && (
+            {data.tldr && (
               <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                 <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Summary</p>
-                <p className="text-base leading-relaxed" style={{ color: 'var(--color-parchment)' }}>{session.tldr}</p>
+                <p className="text-base leading-relaxed" style={{ color: 'var(--color-parchment)' }}>{data.tldr}</p>
               </div>
             )}
 
-            {session.generated_text && (
+            {data.generated_text && (
               <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                 <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Chronicle</p>
                 <div className="text-base leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}>
-                  {session.generated_text}
+                  {data.generated_text}
                 </div>
               </div>
             )}
@@ -219,7 +222,6 @@ export default function SharePage() {
         )}
       </main>
 
-      {/* Save modal */}
       {showSaveModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-4"
@@ -233,7 +235,7 @@ export default function SharePage() {
           >
             <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid var(--color-border)' }}>
               <p className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>
-                {savedId ? 'Saved Chronicle' : 'Save Chronicle'}
+                {data?.savedId ? 'Saved Chronicle' : 'Save Chronicle'}
               </p>
               <button onClick={() => setShowSaveModal(false)} className="text-lg leading-none cursor-pointer transition-opacity hover:opacity-60" style={{ color: 'var(--color-parchment-muted)' }}>✕</button>
             </div>
@@ -256,16 +258,16 @@ export default function SharePage() {
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={handleSave}
+                  onClick={() => saveMutation.mutate({ savedId: data?.savedId ?? null, note: noteInput.trim() || null })}
                   disabled={saving}
                   className="flex-1 py-2.5 rounded-lg text-sm font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40"
                   style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)', color: '#0c0a14', border: '1px solid var(--color-gold-dim)' }}
                 >
-                  {saving ? 'Saving…' : savedId ? 'Update Note' : 'Save'}
+                  {saving ? 'Saving…' : data?.savedId ? 'Update Note' : 'Save'}
                 </button>
-                {savedId && (
+                {data?.savedId && (
                   <button
-                    onClick={handleUnsave}
+                    onClick={() => unsaveMutation.mutate(data.savedId!)}
                     disabled={saving}
                     className="px-4 py-2.5 rounded-lg text-sm font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40"
                     style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}

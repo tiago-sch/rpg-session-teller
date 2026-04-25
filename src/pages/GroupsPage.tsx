@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { queryClient } from '../lib/queryClient'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import AppHeader from '../components/AppHeader'
@@ -24,46 +26,50 @@ export default function GroupsPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
 
-  const [groups, setGroups] = useState<Group[]>([])
-  const [loading, setLoading] = useState(true)
   const [copiedId, setCopiedId] = useState<string | null>(null)
-
   const [showModal, setShowModal] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newDesc, setNewDesc] = useState('')
-  const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState('')
 
-  useEffect(() => {
-    supabase
-      .from('session_groups')
-      .select('id, public_id, title, description, created_at, group_sessions(count)')
-      .eq('user_id', user!.id)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        setGroups((data as unknown as Group[]) ?? [])
-        setLoading(false)
-      })
-  }, [])
+  const { data: groups = [], isLoading } = useQuery<Group[]>({
+    queryKey: ['groups', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('session_groups')
+        .select('id, public_id, title, description, created_at, group_sessions(count)')
+        .eq('user_id', user!.id)
+        .order('created_at', { ascending: false })
+      return (data as unknown as Group[]) ?? []
+    },
+    enabled: !!user,
+  })
+
+  const createMutation = useMutation({
+    mutationFn: async ({ title, description }: { title: string; description: string | null }) => {
+      const { data, error } = await supabase
+        .from('session_groups')
+        .insert({ user_id: user!.id, title, description })
+        .select('id, public_id, title, description, created_at, group_sessions(count)')
+        .single()
+      if (error) throw error
+      return data as unknown as Group
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups', user?.id] })
+      setNewTitle('')
+      setNewDesc('')
+      setShowModal(false)
+    },
+    onError: (err) => {
+      setCreateError(err instanceof Error ? err.message : 'Failed to create group.')
+    },
+  })
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     setCreateError('')
-    setCreating(true)
-    const { data, error } = await supabase
-      .from('session_groups')
-      .insert({ user_id: user!.id, title: newTitle.trim(), description: newDesc.trim() || null })
-      .select('id, public_id, title, description, created_at, group_sessions(count)')
-      .single()
-    if (error) {
-      setCreateError(error.message)
-    } else {
-      setGroups(gs => [data as unknown as Group, ...gs])
-      setNewTitle('')
-      setNewDesc('')
-      setShowModal(false)
-    }
-    setCreating(false)
+    createMutation.mutate({ title: newTitle.trim(), description: newDesc.trim() || null })
   }
 
   const copyShareLink = async (publicId: string) => {
@@ -102,7 +108,7 @@ export default function GroupsPage() {
           </button>
         </div>
 
-        {loading && (
+        {isLoading && (
           <div className="flex justify-center py-16">
             <svg className="animate-spin" width="24" height="24" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="10" stroke="var(--color-border-bright)" strokeWidth="3" />
@@ -111,7 +117,7 @@ export default function GroupsPage() {
           </div>
         )}
 
-        {!loading && groups.length === 0 && (
+        {!isLoading && groups.length === 0 && (
           <div className="flex flex-col items-center justify-center text-center gap-4 py-20">
             <div
               className="w-12 h-12 rounded-full flex items-center justify-center"
@@ -126,7 +132,7 @@ export default function GroupsPage() {
           </div>
         )}
 
-        {!loading && groups.length > 0 && (
+        {!isLoading && groups.length > 0 && (
           <div className="flex flex-col gap-3">
             {groups.map(group => {
               const count = group.group_sessions?.[0]?.count ?? 0
@@ -240,11 +246,11 @@ export default function GroupsPage() {
               {createError && <p className="text-xs" style={{ color: '#e07070' }}>{createError}</p>}
               <button
                 type="submit"
-                disabled={creating}
+                disabled={createMutation.isPending}
                 className="py-2.5 rounded-lg text-sm font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40"
                 style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)', color: '#0c0a14', border: '1px solid var(--color-gold-dim)' }}
               >
-                {creating ? 'Creating…' : 'Create Group'}
+                {createMutation.isPending ? 'Creating…' : 'Create Group'}
               </button>
             </form>
           </div>

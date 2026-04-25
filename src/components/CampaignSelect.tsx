@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../context/AuthContext'
 
 export interface Campaign {
   id: number
@@ -13,15 +14,16 @@ interface CampaignSelectProps {
 }
 
 export default function CampaignSelect({ value, onChange, disabled }: CampaignSelectProps) {
-  const [campaigns, setCampaigns] = useState<Campaign[]>([])
+  const { user } = useAuth()
 
-  useEffect(() => {
-    supabase
-      .from('campaigns')
-      .select('id, name')
-      .order('name')
-      .then(({ data }) => setCampaigns(data ?? []))
-  }, [])
+  const { data: campaigns = [] } = useQuery<Campaign[]>({
+    queryKey: ['campaigns', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase.from('campaigns').select('id, name').order('name')
+      return (data as Campaign[]) ?? []
+    },
+    enabled: !!user,
+  })
 
   return (
     <select

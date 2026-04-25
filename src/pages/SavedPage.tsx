@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { queryClient } from '../lib/queryClient'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import AppHeader from '../components/AppHeader'
@@ -24,27 +26,21 @@ const inputStyle = {
 export default function SavedPage() {
   const { user } = useAuth()
 
-  const [items, setItems] = useState<SavedItem[]>([])
-  const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editNote, setEditNote] = useState('')
-  const [editSaving, setEditSaving] = useState(false)
 
-  useEffect(() => {
-    async function load() {
+  const { data: items = [], isLoading } = useQuery<SavedItem[]>({
+    queryKey: ['saved_sessions', user?.id],
+    queryFn: async () => {
       const { data: savedData } = await supabase
         .from('saved_sessions')
         .select('id, session_public_id, note, saved_at')
         .eq('user_id', user!.id)
         .order('saved_at', { ascending: false })
 
-      if (!savedData || savedData.length === 0) {
-        setItems([])
-        setLoading(false)
-        return
-      }
+      if (!savedData || savedData.length === 0) return []
 
-      const publicIds = savedData.map(s => s.session_public_id)
+      const publicIds = savedData.map((s: { session_public_id: string }) => s.session_public_id)
 
       const { data: sessionsData } = await supabase
         .from('sessions')
@@ -58,15 +54,12 @@ export default function SavedPage() {
         .in('id', profileIds)
 
       const sessionMap = new Map((sessionsData ?? []).map((s: {
-        public_id: string
-        title: string
-        tldr: string | null
-        user_id: string
-        campaigns: { name: string }[] | null
+        public_id: string; title: string; tldr: string | null
+        user_id: string; campaigns: { name: string }[] | null
       }) => [s.public_id, s]))
       const profileMap = new Map((profilesData ?? []).map((p: { id: string; display_name: string }) => [p.id, p.display_name]))
 
-      setItems(savedData.map(saved => {
+      return savedData.map((saved: { id: number; session_public_id: string; note: string | null; saved_at: string }) => {
         const session = sessionMap.get(saved.session_public_id)
         return {
           ...saved,
@@ -75,28 +68,37 @@ export default function SavedPage() {
           campaignName: session?.campaigns?.[0]?.name ?? null,
           creatorName: session ? (profileMap.get(session.user_id) ?? null) : null,
         }
-      }))
-      setLoading(false)
-    }
-    load()
-  }, [])
+      })
+    },
+    enabled: !!user,
+  })
 
-  const handleRemove = async (id: number) => {
-    await supabase.from('saved_sessions').delete().eq('id', id)
-    setItems(prev => prev.filter(i => i.id !== id))
-  }
+  const removeMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const { error } = await supabase.from('saved_sessions').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['saved_sessions', user?.id] })
+    },
+  })
 
-  const handleEditNote = async (id: number) => {
-    setEditSaving(true)
-    const { error } = await supabase
-      .from('saved_sessions')
-      .update({ note: editNote.trim() || null })
-      .eq('id', id)
-    if (!error) {
-      setItems(prev => prev.map(i => i.id === id ? { ...i, note: editNote.trim() || null } : i))
+  const updateNoteMutation = useMutation({
+    mutationFn: async ({ id, note }: { id: number; note: string | null }) => {
+      const { error } = await supabase
+        .from('saved_sessions')
+        .update({ note })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['saved_sessions', user?.id] })
       setEditingId(null)
-    }
-    setEditSaving(false)
+    },
+  })
+
+  const handleEditNote = (id: number) => {
+    updateNoteMutation.mutate({ id, note: editNote.trim() || null })
   }
 
   return (
@@ -114,7 +116,7 @@ export default function SavedPage() {
           Saved Chronicles
         </h1>
 
-        {loading && (
+        {isLoading && (
           <div className="flex justify-center py-16">
             <svg className="animate-spin" width="24" height="24" viewBox="0 0 24 24" fill="none">
               <circle cx="12" cy="12" r="10" stroke="var(--color-border-bright)" strokeWidth="3" />
@@ -123,7 +125,7 @@ export default function SavedPage() {
           </div>
         )}
 
-        {!loading && items.length === 0 && (
+        {!isLoading && items.length === 0 && (
           <div className="flex flex-col items-center justify-center text-center gap-4 py-20">
             <div
               className="w-12 h-12 rounded-full flex items-center justify-center"
@@ -137,7 +139,7 @@ export default function SavedPage() {
           </div>
         )}
 
-        {!loading && items.length > 0 && (
+        {!isLoading && items.length > 0 && (
           <div className="flex flex-col gap-3">
             {items.map(item => (
               <div
@@ -166,8 +168,9 @@ export default function SavedPage() {
                       </svg>
                     </button>
                     <button
-                      onClick={() => handleRemove(item.id)}
-                      className="cursor-pointer transition-opacity hover:opacity-100"
+                      onClick={() => removeMutation.mutate(item.id)}
+                      disabled={removeMutation.isPending}
+                      className="cursor-pointer transition-opacity hover:opacity-100 disabled:opacity-30"
                       style={{ color: 'var(--color-parchment-muted)', opacity: 0.6 }}
                       title="Remove from saved"
                     >
@@ -202,15 +205,15 @@ export default function SavedPage() {
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleEditNote(item.id)}
-                        disabled={editSaving}
+                        disabled={updateNoteMutation.isPending}
                         className="px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40"
                         style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)', color: '#0c0a14', border: '1px solid var(--color-gold-dim)' }}
                       >
-                        {editSaving ? 'Saving…' : 'Save'}
+                        {updateNoteMutation.isPending ? 'Saving…' : 'Save'}
                       </button>
                       <button
                         onClick={() => setEditingId(null)}
-                        disabled={editSaving}
+                        disabled={updateNoteMutation.isPending}
                         className="px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40"
                         style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
                       >

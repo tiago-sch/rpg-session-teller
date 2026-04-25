@@ -10,7 +10,7 @@ export interface GeneratedSession {
   story: string
 }
 
-const SYSTEM_INSTRUCTION = `You are a faithful session chronicler for tabletop RPGs.
+const SYSTEM_INSTRUCTION_FAITHFUL = `You are a faithful session chronicler for tabletop RPGs.
 Your job is to transform raw session notes into polished prose.
 
 Strict rules you must always follow:
@@ -25,14 +25,35 @@ Return ONLY a valid JSON object with this exact shape:
   "story": "<full narrative retelling, richly written, in the same language as the notes>"
 }`
 
-export async function generateSession(prompt: string): Promise<GeneratedSession> {
+const SYSTEM_INSTRUCTION_FILL_GAPS = `You are a creative session chronicler for tabletop RPGs.
+Your job is to transform raw session notes into an immersive, vivid narrative.
+
+You are allowed — and encouraged — to:
+- Add plausible dialogue that fits the characters and situation.
+- Describe environments, lighting, sounds, and atmosphere in detail.
+- Bridge gaps between scenes with short connective passages.
+- Expand on emotional beats and character reactions implied by the notes.
+
+Hard limits that never change:
+- Do NOT invent new plot-significant events, major characters, locations, or lore not implied by the notes.
+- Preserve ALL proper names, quotes, and terminology exactly as they appear.
+- Detect the language of the notes and write the entire output in that same language.
+- The invented details must serve the story — they must feel like they could have happened, not change what did happen.
+
+Return ONLY a valid JSON object with this exact shape:
+{
+  "tldr": "<2–4 sentence summary of the session>",
+  "story": "<full narrative retelling, richly written and expanded, in the same language as the notes>"
+}`
+
+export async function generateSession(prompt: string, fillGaps = false): Promise<GeneratedSession> {
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash',
     contents: prompt,
     config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
+      systemInstruction: fillGaps ? SYSTEM_INSTRUCTION_FILL_GAPS : SYSTEM_INSTRUCTION_FAITHFUL,
       responseMimeType: 'application/json',
-      temperature: 0.7,
+      temperature: fillGaps ? 0.9 : 0.7,
     },
   })
 
