@@ -32,7 +32,7 @@ export default function ProfilePage() {
       className="min-h-screen flex flex-col"
       style={{ background: 'radial-gradient(ellipse at 50% 0%, #1e1830 0%, var(--color-ink) 60%)' }}
     >
-      <AppHeader back={{ label: 'Chronicles', to: '/dashboard' }} />
+      <AppHeader />
 
       <main className="flex-1 w-full max-w-sm mx-auto px-4 sm:px-6 py-8 sm:py-12 flex flex-col gap-8">
         <div>

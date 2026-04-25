@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import AppHeader from '../components/AppHeader'
@@ -23,7 +22,6 @@ const inputStyle = {
 }
 
 export default function SavedPage() {
-  const navigate = useNavigate()
   const { user } = useAuth()
 
   const [items, setItems] = useState<SavedItem[]>([])
@@ -64,7 +62,7 @@ export default function SavedPage() {
         title: string
         tldr: string | null
         user_id: string
-        campaigns: { name: string } | null
+        campaigns: { name: string }[] | null
       }) => [s.public_id, s]))
       const profileMap = new Map((profilesData ?? []).map((p: { id: string; display_name: string }) => [p.id, p.display_name]))
 
@@ -74,7 +72,7 @@ export default function SavedPage() {
           ...saved,
           sessionTitle: session?.title,
           sessionTldr: session?.tldr,
-          campaignName: (session?.campaigns as { name: string } | null)?.name ?? null,
+          campaignName: session?.campaigns?.[0]?.name ?? null,
           creatorName: session ? (profileMap.get(session.user_id) ?? null) : null,
         }
       }))
