@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../lib/queryClient'
@@ -10,6 +10,8 @@ interface Campaign {
   id: number
   name: string
   description: string | null
+  notes: string | null
+  include_history: boolean
 }
 
 interface Session {
@@ -22,6 +24,19 @@ interface Session {
   updated_at: string
 }
 
+interface CharacterInput {
+  id?: number
+  tempId: string
+  name: string
+  notes: string
+  photoUrl: string | null
+  uploading: boolean
+}
+
+function makeTempId() {
+  return Math.random().toString(36).slice(2)
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -29,22 +44,78 @@ export default function DashboardPage() {
   const [selectedCampaign, setSelectedCampaign] = useState<number | 'all' | 'none'>('all')
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
+  // ── Create modal ──
   const [showModal, setShowModal] = useState(false)
   const [newName, setNewName] = useState('')
   const [newDesc, setNewDesc] = useState('')
+  const [newNotes, setNewNotes] = useState('')
+  const [newIncludeHistory, setNewIncludeHistory] = useState(false)
   const [createError, setCreateError] = useState('')
 
+  // ── Edit modal ──
   const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null)
   const [editName, setEditName] = useState('')
   const [editDesc, setEditDesc] = useState('')
+  const [editNotes, setEditNotes] = useState('')
+  const [editIncludeHistory, setEditIncludeHistory] = useState(false)
+  const [editCharacters, setEditCharacters] = useState<CharacterInput[]>([])
+  const [editCharactersLoading, setEditCharactersLoading] = useState(false)
   const [editError, setEditError] = useState('')
+
+  // Load characters when edit modal opens
+  useEffect(() => {
+    if (!editingCampaign) { setEditCharacters([]); return }
+    setEditCharactersLoading(true)
+    supabase
+      .from('campaign_characters')
+      .select('id, name, notes, photo_url, sort_order')
+      .eq('campaign_id', editingCampaign.id)
+      .order('sort_order')
+      .then(({ data }) => {
+        setEditCharacters(
+          (data ?? []).map(c => ({
+            id: c.id,
+            tempId: makeTempId(),
+            name: c.name,
+            notes: c.notes ?? '',
+            photoUrl: c.photo_url ?? null,
+            uploading: false,
+          }))
+        )
+        setEditCharactersLoading(false)
+      })
+  }, [editingCampaign])
+
+  const fileInputRefs = useRef<Map<string, HTMLInputElement>>(new Map())
+
+  const handlePhotoUpload = async (tempId: string, file: File) => {
+    setEditCharacters(prev => prev.map(c => c.tempId === tempId ? { ...c, uploading: true } : c))
+    const ext = file.name.split('.').pop() ?? 'jpg'
+    const path = `${user!.id}/${Date.now()}.${ext}`
+    const { data, error } = await supabase.storage.from('character-avatars').upload(path, file, { upsert: true })
+    if (!error && data) {
+      const { data: urlData } = supabase.storage.from('character-avatars').getPublicUrl(data.path)
+      setEditCharacters(prev => prev.map(c => c.tempId === tempId ? { ...c, photoUrl: urlData.publicUrl, uploading: false } : c))
+    } else {
+      setEditCharacters(prev => prev.map(c => c.tempId === tempId ? { ...c, uploading: false } : c))
+    }
+  }
+
+  const addCharacter = () =>
+    setEditCharacters(prev => [...prev, { tempId: makeTempId(), name: '', notes: '', photoUrl: null, uploading: false }])
+
+  const removeCharacter = (tempId: string) =>
+    setEditCharacters(prev => prev.filter(c => c.tempId !== tempId))
+
+  const updateCharacter = (tempId: string, field: 'name' | 'notes', value: string) =>
+    setEditCharacters(prev => prev.map(c => c.tempId === tempId ? { ...c, [field]: value } : c))
 
   const { data: campaigns = [], isLoading: loadingCampaigns } = useQuery<Campaign[]>({
     queryKey: ['campaigns', user?.id],
     queryFn: async () => {
       const { data } = await supabase
         .from('campaigns')
-        .select('id, name, description')
+        .select('id, name, description, notes, include_history')
         .eq('user_id', user!.id)
         .order('name')
       return (data as Campaign[]) ?? []
@@ -71,60 +142,93 @@ export default function DashboardPage() {
   })
 
   const createMutation = useMutation({
-    mutationFn: async ({ name, description }: { name: string; description: string | null }) => {
+    mutationFn: async ({ name, description, notes, include_history }: {
+      name: string; description: string | null; notes: string | null; include_history: boolean
+    }) => {
       const { error } = await supabase
         .from('campaigns')
-        .insert({ user_id: user!.id, name, description })
+        .insert({ user_id: user!.id, name, description, notes, include_history })
       if (error) throw error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaigns', user?.id] })
-      setNewName('')
-      setNewDesc('')
+      setNewName(''); setNewDesc(''); setNewNotes(''); setNewIncludeHistory(false)
       setShowModal(false)
     },
-    onError: (err) => {
-      setCreateError(err instanceof Error ? err.message : 'Failed to create campaign.')
-    },
+    onError: (err) => { setCreateError(err instanceof Error ? err.message : 'Failed to create campaign.') },
   })
 
   const editMutation = useMutation({
-    mutationFn: async ({ id, name, description }: { id: number; name: string; description: string | null }) => {
-      const { error } = await supabase
+    mutationFn: async ({ id, name, description, notes, include_history, characters }: {
+      id: number; name: string; description: string | null; notes: string | null
+      include_history: boolean; characters: CharacterInput[]
+    }) => {
+      const { error: camErr } = await supabase
         .from('campaigns')
-        .update({ name, description })
+        .update({ name, description, notes, include_history })
         .eq('id', id)
-      if (error) throw error
+      if (camErr) throw camErr
+
+      const { error: delErr } = await supabase
+        .from('campaign_characters')
+        .delete()
+        .eq('campaign_id', id)
+      if (delErr) throw delErr
+
+      const valid = characters.filter(c => c.name.trim())
+      if (valid.length > 0) {
+        const { error: insErr } = await supabase
+          .from('campaign_characters')
+          .insert(valid.map((c, i) => ({
+            campaign_id: id,
+            name: c.name.trim(),
+            notes: c.notes.trim() || null,
+            photo_url: c.photoUrl || null,
+            sort_order: i,
+          })))
+        if (insErr) throw insErr
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaigns', user?.id] })
-      // also refresh sessions since campaign names appear there
       queryClient.invalidateQueries({ queryKey: ['sessions', user?.id] })
       setEditingCampaign(null)
     },
-    onError: (err) => {
-      setEditError(err instanceof Error ? err.message : 'Failed to update campaign.')
-    },
+    onError: (err) => { setEditError(err instanceof Error ? err.message : 'Failed to update campaign.') },
   })
 
   const openEdit = (c: Campaign) => {
     setEditingCampaign(c)
     setEditName(c.name)
     setEditDesc(c.description ?? '')
+    setEditNotes(c.notes ?? '')
+    setEditIncludeHistory(c.include_history)
     setEditError('')
   }
 
   const handleCreateCampaign = (e: React.FormEvent) => {
     e.preventDefault()
     setCreateError('')
-    createMutation.mutate({ name: newName.trim(), description: newDesc.trim() || null })
+    createMutation.mutate({
+      name: newName.trim(),
+      description: newDesc.trim() || null,
+      notes: newNotes.trim() || null,
+      include_history: newIncludeHistory,
+    })
   }
 
   const handleEditCampaign = (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingCampaign) return
     setEditError('')
-    editMutation.mutate({ id: editingCampaign.id, name: editName.trim(), description: editDesc.trim() || null })
+    editMutation.mutate({
+      id: editingCampaign.id,
+      name: editName.trim(),
+      description: editDesc.trim() || null,
+      notes: editNotes.trim() || null,
+      include_history: editIncludeHistory,
+      characters: editCharacters,
+    })
   }
 
   const isLoading = loadingSessions || loadingCampaigns
@@ -215,7 +319,7 @@ export default function DashboardPage() {
                 </button>
               )}
               <button
-                onClick={() => navigate('/new')}
+                onClick={() => navigate('/new', { state: typeof selectedCampaign === 'number' ? { campaignId: selectedCampaign } : undefined })}
                 className="px-4 sm:px-5 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer"
                 style={{
                   fontFamily: 'var(--font-display)',
@@ -436,7 +540,7 @@ export default function DashboardPage() {
         </main>
       </div>
 
-      {/* New Campaign modal */}
+      {/* ── New Campaign modal ── */}
       {showModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-4"
@@ -444,17 +548,16 @@ export default function DashboardPage() {
           onClick={() => setShowModal(false)}
         >
           <div
-            className="w-full max-w-sm rounded-2xl shadow-2xl"
+            className="w-full max-w-sm max-h-[85vh] flex flex-col rounded-2xl shadow-2xl"
             style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-bright)', boxShadow: '0 0 60px rgba(200,145,58,0.08), 0 24px 48px rgba(0,0,0,0.6)' }}
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid var(--color-border)' }}>
+            <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
               <p className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>New Campaign</p>
               <button onClick={() => setShowModal(false)} className="text-lg leading-none cursor-pointer transition-opacity hover:opacity-60" style={{ color: 'var(--color-parchment-muted)' }}>✕</button>
             </div>
-            <form onSubmit={handleCreateCampaign} className="px-6 py-5 flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>Name</label>
+            <form onSubmit={handleCreateCampaign} className="overflow-y-auto flex-1 px-6 py-5 flex flex-col gap-4">
+              <Field label="Name">
                 <input
                   type="text"
                   placeholder="Curse of Strahd"
@@ -463,26 +566,37 @@ export default function DashboardPage() {
                   required
                   autoFocus
                   className="px-4 py-2.5 rounded-lg text-sm focus:outline-none"
-                  style={{ background: 'var(--color-ink-soft)', border: '1px solid var(--color-border)', color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}
+                  style={fieldStyle}
                   onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
                   onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
                 />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>
-                  Description <span style={{ color: 'var(--color-mist)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
-                </label>
+              </Field>
+              <Field label="Description" optional>
                 <textarea
                   placeholder="A gothic horror campaign set in the land of Barovia…"
                   value={newDesc}
                   onChange={e => setNewDesc(e.target.value)}
-                  rows={3}
+                  rows={2}
                   className="px-4 py-2.5 rounded-lg text-sm focus:outline-none resize-none"
-                  style={{ background: 'var(--color-ink-soft)', border: '1px solid var(--color-border)', color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}
+                  style={fieldStyle}
                   onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
                   onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
                 />
-              </div>
+              </Field>
+              <Field label="Campaign Notes" optional>
+                <textarea
+                  placeholder={"World lore, house rules, recurring themes…"}
+                  value={newNotes}
+                  onChange={e => setNewNotes(e.target.value)}
+                  rows={4}
+                  className="px-4 py-2.5 rounded-lg text-sm focus:outline-none resize-y"
+                  style={{ ...fieldStyle, minHeight: '80px' }}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+                />
+                <p className="text-xs" style={{ color: 'var(--color-border-bright)' }}>Passed to the AI when generating sessions for this campaign.</p>
+              </Field>
+              <IncludeHistoryToggle value={newIncludeHistory} onChange={setNewIncludeHistory} />
               {createError && <p className="text-xs" style={{ color: '#e07070' }}>{createError}</p>}
               <button
                 type="submit"
@@ -497,7 +611,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Edit Campaign modal */}
+      {/* ── Edit Campaign modal ── */}
       {editingCampaign && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center px-4"
@@ -505,17 +619,18 @@ export default function DashboardPage() {
           onClick={() => setEditingCampaign(null)}
         >
           <div
-            className="w-full max-w-sm rounded-2xl shadow-2xl"
+            className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl shadow-2xl"
             style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-bright)', boxShadow: '0 0 60px rgba(200,145,58,0.08), 0 24px 48px rgba(0,0,0,0.6)' }}
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid var(--color-border)' }}>
+            <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
               <p className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Edit Campaign</p>
               <button onClick={() => setEditingCampaign(null)} className="text-lg leading-none cursor-pointer transition-opacity hover:opacity-60" style={{ color: 'var(--color-parchment-muted)' }}>✕</button>
             </div>
-            <form onSubmit={handleEditCampaign} className="px-6 py-5 flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>Name</label>
+
+            <form onSubmit={handleEditCampaign} className="overflow-y-auto flex-1 px-6 py-5 flex flex-col gap-5">
+              {/* Basic fields */}
+              <Field label="Name">
                 <input
                   type="text"
                   value={editName}
@@ -523,29 +638,144 @@ export default function DashboardPage() {
                   required
                   autoFocus
                   className="px-4 py-2.5 rounded-lg text-sm focus:outline-none"
-                  style={{ background: 'var(--color-ink-soft)', border: '1px solid var(--color-border)', color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}
+                  style={fieldStyle}
                   onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
                   onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
                 />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>
-                  Description <span style={{ color: 'var(--color-mist)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
-                </label>
+              </Field>
+              <Field label="Description" optional>
                 <textarea
                   value={editDesc}
                   onChange={e => setEditDesc(e.target.value)}
-                  rows={3}
+                  rows={2}
                   className="px-4 py-2.5 rounded-lg text-sm focus:outline-none resize-none"
-                  style={{ background: 'var(--color-ink-soft)', border: '1px solid var(--color-border)', color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}
+                  style={fieldStyle}
                   onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
                   onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
                 />
+              </Field>
+              <Field label="Campaign Notes" optional>
+                <textarea
+                  placeholder={"World lore, house rules, recurring themes…"}
+                  value={editNotes}
+                  onChange={e => setEditNotes(e.target.value)}
+                  rows={4}
+                  className="px-4 py-2.5 rounded-lg text-sm focus:outline-none resize-y"
+                  style={{ ...fieldStyle, minHeight: '80px' }}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+                />
+                <p className="text-xs" style={{ color: 'var(--color-border-bright)' }}>Passed to the AI when generating sessions for this campaign.</p>
+              </Field>
+              <IncludeHistoryToggle value={editIncludeHistory} onChange={setEditIncludeHistory} />
+
+              {/* Characters roster */}
+              <div className="flex flex-col gap-3 pt-1" style={{ borderTop: '1px solid var(--color-border)' }}>
+                <p className="pt-3 text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>
+                  Characters
+                </p>
+
+                {editCharactersLoading ? (
+                  <div className="flex justify-center py-4">
+                    <svg className="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="var(--color-border-bright)" strokeWidth="3" />
+                      <path d="M12 2a10 10 0 0 1 10 10" stroke="var(--color-gold)" strokeWidth="3" strokeLinecap="round" />
+                    </svg>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {editCharacters.map(char => (
+                      <div
+                        key={char.tempId}
+                        className="flex gap-3 p-3 rounded-xl"
+                        style={{ background: 'var(--color-ink-soft)', border: '1px solid var(--color-border)' }}
+                      >
+                        {/* Avatar */}
+                        <div className="shrink-0">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            ref={el => { if (el) fileInputRefs.current.set(char.tempId, el) }}
+                            onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(char.tempId, f) }}
+                          />
+                          <button
+                            type="button"
+                            title="Upload photo"
+                            onClick={() => fileInputRefs.current.get(char.tempId)?.click()}
+                            className="relative w-10 h-10 rounded-full overflow-hidden flex items-center justify-center cursor-pointer transition-opacity hover:opacity-80"
+                            style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border-bright)', flexShrink: 0 }}
+                          >
+                            {char.uploading ? (
+                              <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                <circle cx="12" cy="12" r="10" stroke="var(--color-border-bright)" strokeWidth="3" />
+                                <path d="M12 2a10 10 0 0 1 10 10" stroke="var(--color-gold)" strokeWidth="3" strokeLinecap="round" />
+                              </svg>
+                            ) : char.photoUrl ? (
+                              <img src={char.photoUrl} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ color: 'var(--color-border-bright)' }}>
+                                <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="1.8"/>
+                                <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                              </svg>
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Fields */}
+                        <div className="flex flex-col gap-2 flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              placeholder="Character name"
+                              value={char.name}
+                              onChange={e => updateCharacter(char.tempId, 'name', e.target.value)}
+                              className="flex-1 px-3 py-1.5 rounded-lg text-sm focus:outline-none min-w-0"
+                              style={fieldStyle}
+                              onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
+                              onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeCharacter(char.tempId)}
+                              className="shrink-0 text-sm leading-none cursor-pointer transition-opacity hover:opacity-80"
+                              style={{ color: 'var(--color-parchment-muted)' }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <textarea
+                            placeholder="Description, role, traits…"
+                            value={char.notes}
+                            onChange={e => updateCharacter(char.tempId, 'notes', e.target.value)}
+                            rows={2}
+                            className="px-3 py-1.5 rounded-lg text-sm focus:outline-none resize-none"
+                            style={fieldStyle}
+                            onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
+                            onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+                          />
+                        </div>
+                      </div>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={addCharacter}
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer transition-colors w-fit"
+                      style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)', border: '1px dashed var(--color-gold-dim)' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(200,145,58,0.06)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      + Add Character
+                    </button>
+                  </div>
+                )}
               </div>
+
               {editError && <p className="text-xs" style={{ color: '#e07070' }}>{editError}</p>}
               <button
                 type="submit"
-                disabled={editMutation.isPending}
+                disabled={editMutation.isPending || editCharactersLoading}
                 className="py-2.5 rounded-lg text-sm font-semibold tracking-widest uppercase transition-all cursor-pointer disabled:opacity-40"
                 style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)', color: '#0c0a14', border: '1px solid var(--color-gold-dim)' }}
               >
@@ -555,6 +785,54 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Shared field wrapper ──
+function Field({ label, optional, children }: { label: string; optional?: boolean; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>
+        {label}{optional && <span style={{ color: 'var(--color-mist)', textTransform: 'none', letterSpacing: 0 }}> (optional)</span>}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+const fieldStyle: React.CSSProperties = {
+  background: 'var(--color-ink-soft)',
+  border: '1px solid var(--color-border)',
+  color: 'var(--color-parchment)',
+  fontFamily: 'var(--font-body)',
+  width: '100%',
+}
+
+function IncludeHistoryToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex flex-col gap-2 pt-1" style={{ borderTop: '1px solid var(--color-border)' }}>
+      <div className="flex items-center gap-3 pt-3">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={value}
+          onClick={() => onChange(!value)}
+          className="relative shrink-0 rounded-full transition-colors cursor-pointer"
+          style={{ width: '36px', height: '20px', background: value ? 'var(--color-gold)' : 'var(--color-border-bright)' }}
+        >
+          <span
+            className="absolute top-0.5 rounded-full transition-transform"
+            style={{ width: '16px', height: '16px', background: value ? '#0c0a14' : 'var(--color-ink)', transform: value ? 'translateX(18px)' : 'translateX(2px)' }}
+          />
+        </button>
+        <span className="text-sm" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-body)' }}>
+          Include session history in generation
+        </span>
+      </div>
+      <p className="text-xs leading-relaxed" style={{ color: 'var(--color-border-bright)', fontFamily: 'var(--font-body)', paddingLeft: '48px' }}>
+        When enabled, previous session summaries are passed to the AI to help it maintain continuity.
+      </p>
     </div>
   )
 }

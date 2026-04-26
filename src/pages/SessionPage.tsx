@@ -1,23 +1,25 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useLocation, Link } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../lib/queryClient'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { generateSession, TONES } from '../lib/gemini'
+import { generateSession, generateImage, TONES } from '../lib/gemini'
 import CampaignSelect from '../components/CampaignSelect'
 import AppHeader from '../components/AppHeader'
+import { useDraft, formatDraftAge, type DraftData } from '../hooks/useDraft'
 
 interface Session {
   id: number
   user_id: string
   title: string
   campaign_id: number | null
-  campaigns: { name: string } | null
+  campaigns: { name: string; notes: string | null } | null
   tldr: string | null
   prompt: string | null
   tone: string | null
   generated_text: string | null
+  cover_image_url: string | null
   created_at: string
   updated_at: string
 }
@@ -59,6 +61,10 @@ export default function SessionPage() {
   const [editError, setEditError] = useState('')
   const [regenerating, setRegenerating] = useState(false)
   const [regenError, setRegenError] = useState('')
+  const [generatingImage, setGeneratingImage] = useState(false)
+  const [imageError, setImageError] = useState('')
+  const [showDraftBanner, setShowDraftBanner] = useState(false)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // regen confirmation
   const [pendingRegen, setPendingRegen] = useState<PendingRegen | null>(null)
@@ -71,6 +77,7 @@ export default function SessionPage() {
   const [groupModalLoading, setGroupModalLoading] = useState(false)
   const [groupSaving, setGroupSaving] = useState(false)
 
+  // Autosave edit draft while editing
   const sessionQueryKey = ['session', public_id] as const
 
   const { data: session, isLoading, isError } = useQuery<Session>({
@@ -78,13 +85,26 @@ export default function SessionPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('sessions')
-        .select('id, user_id, title, campaign_id, campaigns(name), tldr, prompt, tone, generated_text, created_at, updated_at')
+        .select('id, user_id, title, campaign_id, campaigns(name, notes), tldr, prompt, tone, generated_text, cover_image_url, created_at, updated_at')
         .eq('public_id', public_id)
         .single()
       if (error || !data) throw new Error('Not found')
       return data as unknown as Session
     },
   })
+
+  const { draft, saveDraft, clearDraft } = useDraft(user, session?.id ?? undefined)
+
+  // Autosave edit draft while editing
+  useEffect(() => {
+    if (!showEdit) return
+    if (!editTitle && !editPromptValue) return
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      saveDraft({ title: editTitle, campaign_id: editCampaignId, prompt: editPromptValue, fill_gaps: editFillGaps, tone: editToneId })
+    }, 1500)
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
+  }, [showEdit, editTitle, editCampaignId, editPromptValue, editFillGaps, editToneId, saveDraft])
 
   // Redirect non-owners to public share page
   useEffect(() => {
@@ -99,6 +119,7 @@ export default function SessionPage() {
       if (error) throw error
     },
     onSuccess: () => {
+      clearDraft()
       queryClient.invalidateQueries({ queryKey: sessionQueryKey })
       queryClient.invalidateQueries({ queryKey: ['sessions', user?.id] })
       queryClient.invalidateQueries({ queryKey: ['session_public', public_id] })
@@ -120,7 +141,18 @@ export default function SessionPage() {
     setEditTab('notes')
     setEditError('')
     setRegenError('')
+    const draftIsNewer = draft && new Date(draft.updated_at) > new Date(session.updated_at)
+    setShowDraftBanner(!!draftIsNewer)
     setShowEdit(true)
+  }
+
+  const restoreDraft = (d: DraftData) => {
+    setEditTitle(d.title)
+    setEditCampaignId(d.campaign_id)
+    setEditPromptValue(d.prompt)
+    setEditFillGaps(d.fill_gaps)
+    setEditToneId(d.tone)
+    setShowDraftBanner(false)
   }
 
   const handleRegenerate = async () => {
@@ -128,7 +160,25 @@ export default function SessionPage() {
     setRegenerating(true)
     setRegenError('')
     try {
-      const result = await generateSession(editPromptValue.trim(), editFillGaps, editToneId)
+      let campaignHistory: string[] | undefined
+      let campaignContext: { notes?: string | null; characters?: { name: string; notes?: string | null }[] } | undefined
+
+      if (editCampaignId) {
+        const [{ data: campaignData }, { data: historyData }, { data: chars }] = await Promise.all([
+          supabase.from('campaigns').select('notes, include_history').eq('id', editCampaignId).single(),
+          supabase.from('sessions').select('tldr').eq('campaign_id', editCampaignId).not('tldr', 'is', null).order('created_at', { ascending: true }),
+          supabase.from('campaign_characters').select('name, notes').eq('campaign_id', editCampaignId).order('sort_order'),
+        ])
+        if (campaignData?.include_history && historyData) {
+          campaignHistory = (historyData as { tldr: string }[]).map(s => s.tldr).filter(Boolean)
+        }
+        const characters = ((chars ?? []) as { name: string; notes?: string | null }[]).filter(c => c.name)
+        if (campaignData?.notes || characters.length > 0) {
+          campaignContext = { notes: campaignData?.notes, characters }
+        }
+      }
+
+      const result = await generateSession(editPromptValue.trim(), editFillGaps, editToneId, campaignHistory, campaignContext)
       setPendingRegen({
         title: editTitle.trim(),
         campaignId: editCampaignId,
@@ -142,6 +192,47 @@ export default function SessionPage() {
       setRegenError('Generation failed. Please try again.')
     } finally {
       setRegenerating(false)
+    }
+  }
+
+  const handleGenerateImage = async () => {
+    if (!session || !user) return
+    setGeneratingImage(true)
+    setImageError('')
+    try {
+      const toneName = TONES.find(t => t.id === session.tone)?.label
+      const parts: string[] = []
+      if (session.campaigns?.name) parts.push(`Campaign: ${session.campaigns.name}`)
+      if (session.title) parts.push(`Session: ${session.title}`)
+      if (session.tldr) parts.push(`Summary: ${session.tldr}`)
+      if (session.campaigns?.notes) parts.push(`World context: ${session.campaigns.notes}`)
+      if (toneName) parts.push(`Tone: ${toneName}`)
+      parts.push('Create a single evocative fantasy scene illustration based on this session. No text, no borders.')
+      const imagePrompt = parts.join('\n')
+
+      const { base64, mimeType } = await generateImage(imagePrompt)
+
+      const ext = mimeType.includes('jpeg') ? 'jpg' : 'png'
+      const path = `${user.id}/${Date.now()}.${ext}`
+      const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+      const { error: uploadError } = await supabase.storage
+        .from('session-images')
+        .upload(path, bytes, { contentType: mimeType, upsert: true })
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage.from('session-images').getPublicUrl(path)
+
+      const { error: saveError } = await supabase
+        .from('sessions')
+        .update({ cover_image_url: publicUrl })
+        .eq('public_id', public_id)
+      if (saveError) throw saveError
+
+      queryClient.invalidateQueries({ queryKey: sessionQueryKey })
+    } catch {
+      setImageError('Image generation failed. Please try again.')
+    } finally {
+      setGeneratingImage(false)
     }
   }
 
@@ -170,6 +261,7 @@ export default function SessionPage() {
       if (error) throw error
     },
     onSuccess: () => {
+      clearDraft()
       queryClient.invalidateQueries({ queryKey: sessionQueryKey })
       queryClient.invalidateQueries({ queryKey: ['sessions', user?.id] })
       queryClient.invalidateQueries({ queryKey: ['session_public', public_id] })
@@ -303,6 +395,35 @@ export default function SessionPage() {
         {/* ── Edit view ── */}
         {session && showEdit && (
           <div className="flex flex-col gap-6">
+            {showDraftBanner && draft && (
+              <div
+                className="flex items-center justify-between px-4 py-2.5 rounded-lg text-xs"
+                style={{ background: 'var(--color-surface)', border: '1px solid var(--color-gold-dim)', color: 'var(--color-parchment-muted)' }}
+              >
+                <span style={{ fontFamily: 'var(--font-display)' }}>
+                  Unsaved draft from {formatDraftAge(draft.updated_at)}
+                </span>
+                <div className="flex items-center gap-3 ml-4">
+                  <button
+                    type="button"
+                    onClick={() => restoreDraft(draft)}
+                    className="font-semibold cursor-pointer hover:opacity-70 transition-opacity"
+                    style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}
+                  >
+                    Restore
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { clearDraft(); setShowDraftBanner(false) }}
+                    className="cursor-pointer hover:opacity-70 transition-opacity underline"
+                    style={{ fontFamily: 'var(--font-display)' }}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div>
               <h1
                 className="text-2xl font-semibold tracking-wide mb-1"
@@ -459,6 +580,12 @@ export default function SessionPage() {
 
             {editError && <p className="text-xs" style={{ color: '#e07070' }}>{editError}</p>}
 
+            {draft && !showDraftBanner && (
+              <p className="text-xs" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-display)' }}>
+                Draft autosaved · {formatDraftAge(draft.updated_at)}
+              </p>
+            )}
+
             <div className="flex gap-3">
               <button
                 type="button"
@@ -471,7 +598,7 @@ export default function SessionPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setShowEdit(false)}
+                onClick={() => { clearDraft(); setShowEdit(false) }}
                 disabled={saveMutation.isPending || regenerating}
                 className="px-6 py-2.5 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40"
                 style={{ fontFamily: 'var(--font-display)', background: 'transparent', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
@@ -485,6 +612,57 @@ export default function SessionPage() {
         {/* ── Session view ── */}
         {session && !showEdit && (
           <div className="flex flex-col gap-8">
+            {session.cover_image_url && (
+              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                <img
+                  src={session.cover_image_url}
+                  alt="Session cover"
+                  className="w-full object-cover"
+                  style={{ maxHeight: '400px' }}
+                />
+              </div>
+            )}
+
+            {imageError && (
+              <p className="text-xs text-center" style={{ color: '#e07070' }}>{imageError}</p>
+            )}
+
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={handleGenerateImage}
+                disabled={generatingImage}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  background: 'var(--color-surface-raised)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-parchment-muted)',
+                }}
+                onMouseEnter={e => !generatingImage && (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+              >
+                {generatingImage ? (
+                  <>
+                    <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3"/>
+                      <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
+                    </svg>
+                    Painting the scene…
+                  </>
+                ) : (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                      <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="2"/>
+                      <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/>
+                      <path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    {session.cover_image_url ? 'Regenerate Scene Image' : 'Generate Scene Image'}
+                  </>
+                )}
+              </button>
+            </div>
+
             {fromGroup && (
               <Link
                 to={`/g/${fromGroup.public_id}`}

@@ -1,26 +1,96 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useState, useEffect, useRef } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { queryClient } from '../lib/queryClient'
 import { generateSession, TONES } from '../lib/gemini'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import CampaignSelect from '../components/CampaignSelect'
 import AppHeader from '../components/AppHeader'
+import { useDraft, formatDraftAge } from '../hooks/useDraft'
 
 export default function NewSessionPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const navCampaignId = (location.state as { campaignId?: number } | null)?.campaignId ?? null
   const { user } = useAuth()
   const [title, setTitle] = useState('')
-  const [campaignId, setCampaignId] = useState<number | null>(null)
+  const [campaignId, setCampaignId] = useState<number | null>(navCampaignId)
   const [prompt, setPrompt] = useState('')
   const [fillGaps, setFillGaps] = useState(false)
   const [toneId, setToneId] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [draftApplied, setDraftApplied] = useState(false)
+
+  const { draft, saveDraft, clearDraft } = useDraft(user, null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const { data: campaigns = [] } = useQuery<{ id: number; include_history: boolean; notes: string | null }[]>({
+    queryKey: ['campaigns', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('campaigns')
+        .select('id, include_history, notes')
+        .eq('user_id', user!.id)
+      return (data as { id: number; include_history: boolean; notes: string | null }[]) ?? []
+    },
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const selectedCampaignData = campaigns.find(c => c.id === campaignId)
+  const historyEnabled = selectedCampaignData?.include_history ?? false
+  const draftAppliedRef = useRef(false)
+
+  // Apply draft once it loads (only on first load, not after discard)
+  useEffect(() => {
+    if (!draft || draftAppliedRef.current) return
+    draftAppliedRef.current = true
+    if (draft.title) setTitle(draft.title)
+    if (draft.campaign_id !== null) setCampaignId(draft.campaign_id)
+    if (draft.prompt) setPrompt(draft.prompt)
+    setFillGaps(draft.fill_gaps)
+    if (draft.tone) setToneId(draft.tone)
+    setDraftApplied(true)
+  }, [draft])
+
+  // Autosave on change (debounced 1.5s)
+  useEffect(() => {
+    if (!title && !prompt) return
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      saveDraft({ title, campaign_id: campaignId, prompt, fill_gaps: fillGaps, tone: toneId })
+    }, 1500)
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
+  }, [title, campaignId, prompt, fillGaps, toneId, saveDraft])
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const generated = await generateSession(prompt, fillGaps, toneId)
+      let campaignHistory: string[] | undefined
+      if (historyEnabled && campaignId) {
+        const { data } = await supabase
+          .from('sessions')
+          .select('tldr')
+          .eq('campaign_id', campaignId)
+          .not('tldr', 'is', null)
+          .order('created_at', { ascending: true })
+        campaignHistory = (data ?? []).map((s: { tldr: string }) => s.tldr).filter(Boolean)
+      }
+
+      let campaignContext: { notes?: string | null; characters?: { name: string; notes?: string | null }[] } | undefined
+      if (campaignId) {
+        const { data: chars } = await supabase
+          .from('campaign_characters')
+          .select('name, notes')
+          .eq('campaign_id', campaignId)
+          .order('sort_order')
+        const characters = (chars ?? []).filter((c: { name: string }) => c.name)
+        if (selectedCampaignData?.notes || characters.length > 0) {
+          campaignContext = { notes: selectedCampaignData?.notes, characters }
+        }
+      }
+
+      const generated = await generateSession(prompt, fillGaps, toneId, campaignHistory, campaignContext)
       const { data, error: saveError } = await supabase
         .from('sessions')
         .insert({
@@ -38,6 +108,7 @@ export default function NewSessionPage() {
       return (data as { public_id: string }).public_id
     },
     onSuccess: (publicId) => {
+      clearDraft()
       queryClient.invalidateQueries({ queryKey: ['sessions', user?.id] })
       navigate(`/session/${publicId}`)
     },
@@ -63,6 +134,34 @@ export default function NewSessionPage() {
 
       <main className="flex-1 w-full max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <form onSubmit={handleGenerate} className="flex flex-col gap-6">
+          {draftApplied && (
+            <div
+              className="flex items-center justify-between px-4 py-2.5 rounded-lg text-xs"
+              style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-bright)', color: 'var(--color-parchment-muted)' }}
+            >
+              <span style={{ fontFamily: 'var(--font-display)' }}>
+                Draft restored{draft?.updated_at ? ` · saved ${formatDraftAge(draft.updated_at)}` : ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  clearDraft()
+                  draftAppliedRef.current = true
+                  setTitle('')
+                  setCampaignId(null)
+                  setPrompt('')
+                  setFillGaps(false)
+                  setToneId(null)
+                  setDraftApplied(false)
+                }}
+                className="ml-4 underline cursor-pointer hover:opacity-70 transition-opacity"
+                style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}
+              >
+                Discard
+              </button>
+            </div>
+          )}
+
           <div>
             <h1
               className="text-2xl font-semibold tracking-wide mb-1"
@@ -102,12 +201,30 @@ export default function NewSessionPage() {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label
-              className="text-xs font-semibold tracking-widest uppercase"
-              style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}
-            >
-              Campaign <span style={{ color: 'var(--color-mist)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
-            </label>
+            <div className="flex items-center gap-2">
+              <label
+                className="text-xs font-semibold tracking-widest uppercase"
+                style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}
+              >
+                Campaign <span style={{ color: 'var(--color-mist)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+              </label>
+              {historyEnabled && (
+                <div className="relative group flex items-center">
+                  <span
+                    className="text-xs font-semibold tracking-wide px-2 py-0.5 rounded-full"
+                    style={{ fontFamily: 'var(--font-display)', background: 'var(--color-gold-dim)', color: 'var(--color-parchment)', border: '1px solid var(--color-gold)', cursor: 'default' }}
+                  >
+                    History on
+                  </span>
+                  <div
+                    className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 rounded-lg px-3 py-2.5 text-xs leading-relaxed pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                    style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border-bright)', color: 'var(--color-parchment-muted)' }}
+                  >
+                    Previous session summaries from this campaign will be included in the generation prompt to help the AI maintain continuity.
+                  </div>
+                </div>
+              )}
+            </div>
             <CampaignSelect value={campaignId} onChange={setCampaignId} disabled={generating} />
           </div>
 
@@ -211,6 +328,12 @@ export default function NewSessionPage() {
           </div>
 
           {error && <p className="text-sm text-center" style={{ color: '#e07070' }}>{error}</p>}
+
+          {draft && !draftApplied && (
+            <p className="text-xs text-center" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-display)' }}>
+              Draft autosaved · {formatDraftAge(draft.updated_at)}
+            </p>
+          )}
 
           <button
             type="submit"

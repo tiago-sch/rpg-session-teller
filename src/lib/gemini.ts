@@ -85,16 +85,64 @@ Return ONLY a valid JSON object with this exact shape:
   "story": "<full narrative retelling, richly written and expanded, in the same language as the notes>"
 }`
 
+export async function generateImage(prompt: string): Promise<{ base64: string; mimeType: string }> {
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-preview-05-20',
+    contents: prompt,
+    config: {
+      responseModalities: ['IMAGE', 'TEXT'],
+    },
+  })
+
+  const parts = response.candidates?.[0]?.content?.parts ?? []
+  for (const part of parts) {
+    if (part.inlineData?.data) {
+      return {
+        base64: part.inlineData.data,
+        mimeType: part.inlineData.mimeType ?? 'image/png',
+      }
+    }
+  }
+
+  throw new Error('No image data returned from Gemini.')
+}
+
+export interface CampaignContext {
+  notes?: string | null
+  characters?: { name: string; notes?: string | null }[]
+}
+
 export async function generateSession(
   prompt: string,
   fillGaps = false,
   toneId?: string | null,
+  campaignHistory?: string[],
+  campaignContext?: CampaignContext,
 ): Promise<GeneratedSession> {
   const baseInstruction = fillGaps ? SYSTEM_INSTRUCTION_FILL_GAPS : SYSTEM_INSTRUCTION_FAITHFUL
+
+  const contextParts: string[] = []
+  if (campaignContext?.notes?.trim()) {
+    contextParts.push(`World & Lore Notes:\n${campaignContext.notes.trim()}`)
+  }
+  if (campaignContext?.characters && campaignContext.characters.length > 0) {
+    const charLines = campaignContext.characters
+      .filter(c => c.name.trim())
+      .map(c => c.notes?.trim() ? `- ${c.name.trim()}: ${c.notes.trim()}` : `- ${c.name.trim()}`)
+    if (charLines.length > 0) {
+      contextParts.push(`Key Characters:\n${charLines.join('\n')}`)
+    }
+  }
+  const contextBlock = contextParts.length > 0
+    ? `\n\nCampaign Context:\n${contextParts.join('\n\n')}`
+    : ''
+
+  const historyBlock = campaignHistory && campaignHistory.length > 0
+    ? `\n\nCampaign History — previous sessions in chronological order:\n${campaignHistory.map((s, i) => `Session ${i + 1}: ${s}`).join('\n')}\n\nUse this history to understand the ongoing campaign context and maintain continuity. Reference it only to ground the current session — do not retell these past events as if they just happened.`
+    : ''
+
   const tone = TONES.find(t => t.id === toneId)
-  const systemInstruction = tone
-    ? `${baseInstruction}\n\n${tone.instruction}`
-    : baseInstruction
+  const systemInstruction = `${baseInstruction}${contextBlock}${historyBlock}${tone ? `\n\n${tone.instruction}` : ''}`
 
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash',
