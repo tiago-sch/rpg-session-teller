@@ -87,7 +87,7 @@ Return ONLY a valid JSON object with this exact shape:
 
 export async function generateImage(prompt: string): Promise<{ base64: string; mimeType: string }> {
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-preview-05-20',
+    model: 'gemini-3.1-flash-image-preview',
     contents: prompt,
     config: {
       responseModalities: ['IMAGE', 'TEXT'],

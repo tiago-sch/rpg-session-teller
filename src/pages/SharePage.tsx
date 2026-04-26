@@ -11,6 +11,7 @@ interface SessionPublicData {
   campaign_name: string | null
   tldr: string | null
   generated_text: string | null
+  cover_image_url: string | null
   updated_at: string
   creator_name: string | null
   owner_id: string
@@ -41,7 +42,7 @@ export default function SharePage() {
     queryFn: async () => {
       const { data: sessionData, error } = await supabase
         .from('sessions')
-        .select('title, campaigns(name), tldr, generated_text, updated_at, user_id')
+        .select('title, campaigns(name), tldr, generated_text, cover_image_url, updated_at, user_id')
         .eq('public_id', public_id)
         .single()
 
@@ -66,6 +67,7 @@ export default function SharePage() {
         campaign_name: sd.campaigns?.name ?? null,
         tldr: sd.tldr,
         generated_text: sd.generated_text,
+        cover_image_url: sd.cover_image_url ?? null,
         updated_at: sd.updated_at,
         creator_name: profileData?.display_name ?? null,
         owner_id: sessionData.user_id,
@@ -202,6 +204,17 @@ export default function SharePage() {
               </svg>
               <div className="flex-1 h-px" style={{ background: 'var(--color-border)' }} />
             </div>
+
+            {data.cover_image_url && (
+              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                <img
+                  src={data.cover_image_url}
+                  alt="Session cover"
+                  className="w-full object-cover"
+                  style={{ maxHeight: '400px' }}
+                />
+              </div>
+            )}
 
             {data.tldr && (
               <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>

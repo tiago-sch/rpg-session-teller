@@ -818,12 +818,12 @@ function IncludeHistoryToggle({ value, onChange }: { value: boolean; onChange: (
           role="switch"
           aria-checked={value}
           onClick={() => onChange(!value)}
-          className="relative shrink-0 rounded-full transition-colors cursor-pointer"
+          className="relative shrink-0 rounded-full transition-colors cursor-pointer overflow-hidden"
           style={{ width: '36px', height: '20px', background: value ? 'var(--color-gold)' : 'var(--color-border-bright)' }}
         >
           <span
-            className="absolute top-0.5 rounded-full transition-transform"
-            style={{ width: '16px', height: '16px', background: value ? '#0c0a14' : 'var(--color-ink)', transform: value ? 'translateX(18px)' : 'translateX(2px)' }}
+            className="absolute top-0.5 left-0 rounded-full transition-transform"
+            style={{ width: '16px', height: '16px', background: '#fff', transform: value ? 'translateX(18px)' : 'translateX(2px)' }}
           />
         </button>
         <span className="text-sm" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-body)' }}>

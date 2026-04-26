@@ -206,6 +206,18 @@ export default function SessionPage() {
       if (session.title) parts.push(`Session: ${session.title}`)
       if (session.tldr) parts.push(`Summary: ${session.tldr}`)
       if (session.campaigns?.notes) parts.push(`World context: ${session.campaigns.notes}`)
+      if (session.campaign_id) {
+        const { data: chars } = await supabase
+          .from('campaign_characters')
+          .select('name, notes')
+          .eq('campaign_id', session.campaign_id)
+          .order('sort_order')
+        const characters = ((chars ?? []) as { name: string; notes?: string | null }[]).filter(c => c.name.trim())
+        if (characters.length > 0) {
+          const charLines = characters.map(c => c.notes?.trim() ? `- ${c.name}: ${c.notes}` : `- ${c.name}`)
+          parts.push(`Key characters:\n${charLines.join('\n')}`)
+        }
+      }
       if (toneName) parts.push(`Tone: ${toneName}`)
       parts.push('Create a single evocative fantasy scene illustration based on this session. No text, no borders.')
       const imagePrompt = parts.join('\n')
