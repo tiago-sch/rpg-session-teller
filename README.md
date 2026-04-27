@@ -16,6 +16,7 @@ RPG Session Teller is a web app for tabletop RPG players and game masters. Paste
 - **Public Share Links** — Every session gets a public URL you can share with your table. Only the owner can access the editing view.
 - **Inline Editing** — Edit session titles and campaign assignments directly from the session page.
 - **Profile** — Set a display name that appears as the author on public share pages.
+- **Ink Purchases** — Buy consumable ink packs through Stripe Checkout. Stripe webhooks fulfill purchases into the Supabase ink ledger exactly once.
 - **Responsive Design** — Works on mobile and desktop. Dashboard uses a horizontal chip filter on small screens and a full sidebar on larger ones.
 
 ---
@@ -28,6 +29,7 @@ RPG Session Teller is a web app for tabletop RPG players and game masters. Paste
 | Styling | Tailwind CSS v4 + CSS custom properties |
 | Routing | React Router v7 |
 | Auth & Database | Supabase (email/password auth, PostgreSQL, RLS) |
+| Payments | Stripe Checkout + webhooks |
 | AI | Google Gemini 2.5 Flash (`@google/genai`) |
 | Hosting | Vercel |
 
@@ -80,7 +82,13 @@ Create a `.env.local` file:
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 VITE_GEMINI_API_KEY=your-gemini-api-key
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+APP_URL=http://localhost:3000
 ```
+
+The Vercel API routes also accept `SUPABASE_URL` and `SUPABASE_ANON_KEY`; if omitted, they fall back to the existing `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. Keep `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `SUPABASE_SERVICE_ROLE_KEY` server-only.
 
 ### Database
 
@@ -97,7 +105,13 @@ Run these migrations in the Supabase SQL editor (in order):
 npm run dev
 ```
 
-App runs at `http://localhost:5173`.
+App runs at `http://localhost:5173` with Vite. Use `vercel dev` when testing Stripe Checkout locally so `/api/create-ink-checkout-session` and `/api/stripe-webhook` are available, and set `APP_URL` to the local Vercel URL.
+
+For local webhook testing:
+
+```bash
+stripe listen --forward-to localhost:3000/api/stripe-webhook
+```
 
 ### Build
 
@@ -117,7 +131,7 @@ The `vercel.json` at the root configures SPA routing so direct links (e.g. `/s/:
 }
 ```
 
-Add the three environment variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GEMINI_API_KEY`) in the Vercel project settings before deploying.
+Add the client variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GEMINI_API_KEY`) and server secrets (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `APP_URL`) in the Vercel project settings before deploying.
 
 ---
 

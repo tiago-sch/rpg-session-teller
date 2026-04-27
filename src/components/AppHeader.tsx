@@ -151,13 +151,17 @@ export default function AppHeader() {
 
         {/* ── Desktop: ink balance ── */}
         {user && profile !== null && (
-          <div
+          <button
+            onClick={() => navigate('/ink')}
             className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg shrink-0"
             style={{
               background: 'var(--color-surface-raised)',
               border: '1px solid var(--color-border)',
+              cursor: 'pointer',
             }}
-            title="Ink balance"
+            onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
+            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+            title="Buy ink"
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style={{ color: 'var(--color-gold)', flexShrink: 0 }}>
               <path d="M12 2C12 2 5 10 5 15a7 7 0 0 0 14 0c0-5-7-13-7-13z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" fill="none"/>
@@ -168,7 +172,7 @@ export default function AppHeader() {
             >
               {profile.inks}
             </span>
-          </div>
+          </button>
         )}
 
         {/* ── Desktop: profile icon ── */}
@@ -303,6 +307,20 @@ export default function AppHeader() {
                   </button>
                 )
               })}
+
+              <button
+                onClick={() => navTo('/ink')}
+                style={drawerLinkStyle(location.pathname === '/ink')}
+                onMouseEnter={e => { if (location.pathname !== '/ink') (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)' }}
+                onMouseLeave={e => { if (location.pathname !== '/ink') (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+              >
+                <span style={{ color: location.pathname === '/ink' ? 'var(--color-gold)' : 'inherit' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2C12 2 5 10 5 15a7 7 0 0 0 14 0c0-5-7-13-7-13z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/>
+                  </svg>
+                </span>
+                Buy Ink
+              </button>
 
               {profile?.is_admin && (() => {
                 const active = location.pathname.startsWith('/admin')

@@ -13,6 +13,7 @@ import NewSessionPage from './pages/NewSessionPage'
 import SessionPage from './pages/SessionPage'
 import SharePage from './pages/SharePage'
 import ProfilePage from './pages/ProfilePage'
+import InkPage from './pages/InkPage'
 import GroupsPage from './pages/GroupsPage'
 import GroupPage from './pages/GroupPage'
 import SavedPage from './pages/SavedPage'
@@ -52,6 +53,7 @@ function AppRoutes() {
       <Route path="/new" element={<ProtectedRoute><NewSessionPage /></ProtectedRoute>} />
       <Route path="/session/:public_id" element={<ProtectedRoute><SessionPage /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+      <Route path="/ink" element={<ProtectedRoute><InkPage /></ProtectedRoute>} />
       <Route path="/s/:public_id" element={<SharePage />} />
       <Route path="/g/:public_id" element={<GroupPage />} />
       <Route path="/groups" element={<ProtectedRoute><GroupsPage /></ProtectedRoute>} />
