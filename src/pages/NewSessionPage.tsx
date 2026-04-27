@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { queryClient } from '../lib/queryClient'
-import { generateSession, TONES } from '../lib/gemini'
+import { apiPost } from '../lib/api'
+import { TONES } from '../lib/tones'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../hooks/useProfile'
@@ -14,8 +15,8 @@ export default function NewSessionPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const navCampaignId = (location.state as { campaignId?: number } | null)?.campaignId ?? null
-  const { user } = useAuth()
-  const { profile, spendInks } = useProfile()
+  const { user, session } = useAuth()
+  const { profile } = useProfile()
   const [title, setTitle] = useState('')
   const [campaignId, setCampaignId] = useState<number | null>(navCampaignId)
   const [prompt, setPrompt] = useState('')
@@ -68,54 +69,22 @@ export default function NewSessionPage() {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const inkErr = await spendInks(1)
-      if (inkErr) throw new Error(inkErr)
-
-      let campaignHistory: string[] | undefined
-      if (historyEnabled && campaignId) {
-        const { data } = await supabase
-          .from('sessions')
-          .select('tldr')
-          .eq('campaign_id', campaignId)
-          .not('tldr', 'is', null)
-          .order('created_at', { ascending: true })
-        campaignHistory = (data ?? []).map((s: { tldr: string }) => s.tldr).filter(Boolean)
-      }
-
-      let campaignContext: { notes?: string | null; characters?: { name: string; notes?: string | null }[] } | undefined
-      if (campaignId) {
-        const { data: chars } = await supabase
-          .from('campaign_characters')
-          .select('name, notes')
-          .eq('campaign_id', campaignId)
-          .order('sort_order')
-        const characters = (chars ?? []).filter((c: { name: string }) => c.name)
-        if (selectedCampaignData?.notes || characters.length > 0) {
-          campaignContext = { notes: selectedCampaignData?.notes, characters }
-        }
-      }
-
-      const generated = await generateSession(prompt, fillGaps, toneId, campaignHistory, campaignContext)
-      const { data, error: saveError } = await supabase
-        .from('sessions')
-        .insert({
-          user_id: user!.id,
-          title,
-          campaign_id: campaignId,
-          prompt,
-          tone: toneId,
-          tldr: generated.tldr,
-          generated_text: generated.story,
-        })
-        .select('public_id')
-        .single()
-      if (saveError || !data) throw saveError ?? new Error('Failed to save session.')
-      return (data as { public_id: string }).public_id
+      const data = await apiPost<{ publicId: string; inks: number }>('/api/generate-session', session, {
+        title,
+        campaignId,
+        prompt,
+        fillGaps,
+        toneId,
+      })
+      return data
     },
-    onSuccess: (publicId) => {
+    onSuccess: (data) => {
       clearDraft()
+      queryClient.setQueryData(['profile', user?.id], (old: typeof profile) =>
+        old ? { ...old, inks: data.inks } : old
+      )
       queryClient.invalidateQueries({ queryKey: ['sessions', user?.id] })
-      navigate(`/session/${publicId}`)
+      navigate(`/session/${data.publicId}`)
     },
     onError: (err) => {
       setError(err instanceof Error ? err.message : 'Something went wrong.')

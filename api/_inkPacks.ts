@@ -3,9 +3,11 @@ export interface InkPack {
   name: string
   inks: number
   unitAmount: number
-  currency: 'usd'
+  currency: string
   featured?: boolean
 }
+
+const INK_CURRENCY = (process.env.INK_CURRENCY || 'brl').toLowerCase()
 
 export const INK_PACKS: InkPack[] = [
   {
@@ -13,21 +15,21 @@ export const INK_PACKS: InkPack[] = [
     name: 'Sample Drop',
     inks: 20,
     unitAmount: 400,
-    currency: 'usd',
+    currency: INK_CURRENCY,
   },
   {
     id: 'starter',
     name: 'Starter Vial',
     inks: 60,
     unitAmount: 1000,
-    currency: 'usd',
+    currency: INK_CURRENCY,
   },
   {
     id: 'scribe',
     name: 'Scribe Bottle',
     inks: 140,
     unitAmount: 2000,
-    currency: 'usd',
+    currency: INK_CURRENCY,
     featured: true,
   },
   {
@@ -35,7 +37,7 @@ export const INK_PACKS: InkPack[] = [
     name: 'Archivist Cask',
     inks: 240,
     unitAmount: 3000,
-    currency: 'usd',
+    currency: INK_CURRENCY,
   },
 ]
 

@@ -37,6 +37,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const checkoutSession = await stripe.checkout.sessions.create({
       mode: 'payment',
+      adaptive_pricing: {
+        enabled: true,
+      },
       client_reference_id: user.id,
       customer_email: user.email ?? undefined,
       line_items: [

@@ -1,49 +1,39 @@
 import { GoogleGenAI } from '@google/genai'
-
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY
-if (!apiKey) throw new Error('Missing VITE_GEMINI_API_KEY env var')
-
-const ai = new GoogleGenAI({ apiKey })
+import { requiredEnv } from './_env.js'
 
 export interface GeneratedSession {
   tldr: string
   story: string
 }
 
-export interface Tone {
+interface Tone {
   id: string
-  label: string
   instruction: string
 }
 
-export const TONES: Tone[] = [
+const TONES: Tone[] = [
   {
     id: 'dark_fantasy',
-    label: 'Dark Fantasy',
     instruction: `Tone & Style — Dark Fantasy (The Witcher):
 Write in a gritty, morally ambiguous register. The world is harsh and beautiful in equal measure. Heroes bear scars — physical and emotional — and victories are often pyrrhic. Use visceral, evocative imagery: blood on stone, shadows that breathe, the weight of exhaustion. Avoid triumphalism. Let dread and melancholy underpin even moments of courage. Prose should feel like it was written by someone who has seen too much.`,
   },
   {
     id: 'epic_high_fantasy',
-    label: 'Epic High Fantasy',
     instruction: `Tone & Style — Epic High Fantasy (The Lord of the Rings):
 Write with grandeur and gravitas. Every action carries the weight of legend, every choice echoes across ages. Use elevated, stately prose — long sentences that breathe with purpose, rich descriptions of landscape, lineage, and ancient things. The chronicle should feel like history being set down by a careful hand. Heroes may falter, but their deeds matter. The light exists because the darkness is real.`,
   },
   {
     id: 'comedic_chaotic',
-    label: 'Comedic / Chaotic',
     instruction: `Tone & Style — Comedic / Chaotic Party:
 Write with wit and warmth. The party is gloriously chaotic — their decisions are questionable, their tactics improvised, their victories accidental. Lean into absurdity. Use dry humour, comic timing, and affectionate exaggeration. Failures should be as memorable as successes, perhaps more so. The tone is that of a very funny story being told at the tavern by someone who was there and is still slightly incredulous that it worked out.`,
   },
   {
     id: 'bard',
-    label: 'Narrated by a Bard',
     instruction: `Tone & Style — Narrated by a Bard:
 Write as though performed aloud to a tavern crowd by a skilled bard. Address the audience occasionally ("But what did our heroes do next?", "And here, dear listeners, is where it gets interesting"). Use rhythmic, almost lyrical prose that swells and quiets. Dramatic pauses live in the punctuation. Embellish freely for effect — colour, spectacle, a touch of romance — but never contradict the facts. End moments with a flourish.`,
   },
   {
     id: 'journal',
-    label: "PC's Journal",
     instruction: `Tone & Style — In-Character Journal (written by a PC):
 Write as an intimate first-person journal entry penned by one of the adventurers present. Voice should be personal, subjective, and unpolished — this is private reflection, not a formal record. Include doubts, small observations, emotional reactions to events. Some facts may be coloured by the character's perspective or missed entirely. The style should feel like a real person sitting alone with a candle and writing while it's all still fresh.`,
   },
@@ -85,8 +75,17 @@ Return ONLY a valid JSON object with this exact shape:
   "story": "<full narrative retelling, richly written and expanded, in the same language as the notes>"
 }`
 
+export interface CampaignContext {
+  notes?: string | null
+  characters?: { name: string; notes?: string | null }[]
+}
+
+function geminiClient() {
+  return new GoogleGenAI({ apiKey: requiredEnv('GEMINI_API_KEY') })
+}
+
 export async function generateImage(prompt: string): Promise<{ base64: string; mimeType: string }> {
-  const response = await ai.models.generateContent({
+  const response = await geminiClient().models.generateContent({
     model: 'gemini-3.1-flash-image-preview',
     contents: prompt,
     config: {
@@ -105,11 +104,6 @@ export async function generateImage(prompt: string): Promise<{ base64: string; m
   }
 
   throw new Error('No image data returned from Gemini.')
-}
-
-export interface CampaignContext {
-  notes?: string | null
-  characters?: { name: string; notes?: string | null }[]
 }
 
 export async function generateSession(
@@ -144,7 +138,7 @@ export async function generateSession(
   const tone = TONES.find(t => t.id === toneId)
   const systemInstruction = `${baseInstruction}${contextBlock}${historyBlock}${tone ? `\n\n${tone.instruction}` : ''}`
 
-  const response = await ai.models.generateContent({
+  const response = await geminiClient().models.generateContent({
     model: 'gemini-2.5-flash',
     contents: prompt,
     config: {

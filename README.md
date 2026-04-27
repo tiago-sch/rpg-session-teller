@@ -81,14 +81,16 @@ Create a `.env.local` file:
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
-VITE_GEMINI_API_KEY=your-gemini-api-key
+GEMINI_API_KEY=your-gemini-api-key
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 APP_URL=http://localhost:3000
+INK_CURRENCY=brl
+VITE_INK_CURRENCY=brl
 ```
 
-The Vercel API routes also accept `SUPABASE_URL` and `SUPABASE_ANON_KEY`; if omitted, they fall back to the existing `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. Keep `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `SUPABASE_SERVICE_ROLE_KEY` server-only.
+The Vercel API routes also accept `SUPABASE_URL` and `SUPABASE_ANON_KEY`; if omitted, they fall back to the existing `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. `INK_CURRENCY` controls the Stripe Checkout base charge currency, and `VITE_INK_CURRENCY` keeps the storefront price display in sync. Checkout enables Stripe Adaptive Pricing so eligible customers can pay localized converted prices. Keep `GEMINI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `SUPABASE_SERVICE_ROLE_KEY` server-only.
 
 ### Database
 
@@ -131,7 +133,7 @@ The `vercel.json` at the root configures SPA routing so direct links (e.g. `/s/:
 }
 ```
 
-Add the client variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GEMINI_API_KEY`) and server secrets (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `APP_URL`) in the Vercel project settings before deploying.
+Add the client variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) and server secrets (`GEMINI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `APP_URL`) in the Vercel project settings before deploying.
 
 ---
 
@@ -151,7 +153,7 @@ src/
     useProfile.ts        # Profile fetch + update
   lib/
     supabase.ts          # Supabase client
-    gemini.ts            # Gemini generation + prompt
+    tones.ts             # Browser-safe tone labels
   pages/
     DashboardPage.tsx    # Session list + campaign sidebar
     SessionPage.tsx      # Session detail (owner view)

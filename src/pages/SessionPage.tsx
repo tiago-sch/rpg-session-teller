@@ -5,7 +5,8 @@ import { queryClient } from '../lib/queryClient'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../hooks/useProfile'
-import { generateSession, generateImage, TONES } from '../lib/gemini'
+import { apiPost } from '../lib/api'
+import { TONES } from '../lib/tones'
 import CampaignSelect from '../components/CampaignSelect'
 import AppHeader from '../components/AppHeader'
 import { useDraft, formatDraftAge, type DraftData } from '../hooks/useDraft'
@@ -47,8 +48,8 @@ export default function SessionPage() {
   const navigate = useNavigate()
   const location = useLocation()
   const fromGroup = (location.state as { fromGroup?: { public_id: string; title: string } } | null)?.fromGroup
-  const { user } = useAuth()
-  const { profile, spendInks } = useProfile()
+  const { user, session: authSession } = useAuth()
+  const { profile } = useProfile()
 
   const [copied, setCopied] = useState(false)
 
@@ -172,27 +173,16 @@ export default function SessionPage() {
     setRegenerating(true)
     setRegenError('')
     try {
-      const inkErr = await spendInks(1)
-      if (inkErr) { setRegenError(inkErr); setRegenerating(false); return }
-      let campaignHistory: string[] | undefined
-      let campaignContext: { notes?: string | null; characters?: { name: string; notes?: string | null }[] } | undefined
-
-      if (editCampaignId) {
-        const [{ data: campaignData }, { data: historyData }, { data: chars }] = await Promise.all([
-          supabase.from('campaigns').select('notes, include_history').eq('id', editCampaignId).single(),
-          supabase.from('sessions').select('tldr').eq('campaign_id', editCampaignId).not('tldr', 'is', null).order('created_at', { ascending: true }),
-          supabase.from('campaign_characters').select('name, notes').eq('campaign_id', editCampaignId).order('sort_order'),
-        ])
-        if (campaignData?.include_history && historyData) {
-          campaignHistory = (historyData as { tldr: string }[]).map(s => s.tldr).filter(Boolean)
-        }
-        const characters = ((chars ?? []) as { name: string; notes?: string | null }[]).filter(c => c.name)
-        if (campaignData?.notes || characters.length > 0) {
-          campaignContext = { notes: campaignData?.notes, characters }
-        }
-      }
-
-      const result = await generateSession(editPromptValue.trim(), editFillGaps, editToneId, campaignHistory, campaignContext)
+      const result = await apiPost<{ tldr: string; story: string; inks: number }>('/api/regenerate-session', authSession, {
+        publicId: public_id,
+        campaignId: editCampaignId,
+        prompt: editPromptValue.trim(),
+        fillGaps: editFillGaps,
+        toneId: editToneId,
+      })
+      queryClient.setQueryData(['profile', user?.id], (old: typeof profile) =>
+        old ? { ...old, inks: result.inks } : old
+      )
       setPendingRegen({
         title: editTitle.trim(),
         campaignId: editCampaignId,
@@ -202,8 +192,8 @@ export default function SessionPage() {
         story: result.story,
       })
       setShowEdit(false)
-    } catch {
-      setRegenError('Generation failed. Please try again.')
+    } catch (error) {
+      setRegenError(error instanceof Error ? error.message : 'Generation failed. Please try again.')
     } finally {
       setRegenerating(false)
     }
@@ -237,46 +227,22 @@ export default function SessionPage() {
     setGeneratingImage(true)
     setImageError('')
     try {
-      const inkErr = await spendInks(3)
-      if (inkErr) { setImageError(inkErr); setGeneratingImage(false); return }
-      const toneName = TONES.find(t => t.id === session.tone)?.label
-      const parts: string[] = []
-      if (imgToggleCampaignName && session.campaigns?.name) parts.push(`Campaign: ${session.campaigns.name}`)
-      if (imgToggleTitle && session.title) parts.push(`Session: ${session.title}`)
-      if (session.prompt) parts.push(`Session notes: ${session.prompt}`)
-      if (imgToggleCampaignNotes && session.campaigns?.notes) parts.push(`World context: ${session.campaigns.notes}`)
-      if (imgToggleCharacters && imageModalChars.length > 0) {
-        const charLines = imageModalChars.map(c => c.notes?.trim() ? `- ${c.name}: ${c.notes}` : `- ${c.name}`)
-        parts.push(`Key characters:\n${charLines.join('\n')}`)
-      }
-      if (imgToggleTone && toneName) parts.push(`Tone: ${toneName}`)
-      if (imageExtraNotes.trim()) parts.push(`Additional context: ${imageExtraNotes.trim()}`)
-      if (!imgToggleTone || !toneName) parts.push('Style: fantasy illustration, realistic painterly style, not cartoony')
-      parts.push('Create a single evocative fantasy scene illustration based on this session. No text, no borders.')
-      const imagePrompt = parts.join('\n')
-
-      const { base64, mimeType } = await generateImage(imagePrompt)
-
-      const ext = mimeType.includes('jpeg') ? 'jpg' : 'png'
-      const path = `${user.id}/${Date.now()}.${ext}`
-      const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
-      const { error: uploadError } = await supabase.storage
-        .from('session-images')
-        .upload(path, bytes, { contentType: mimeType, upsert: true })
-      if (uploadError) throw uploadError
-
-      const { data: { publicUrl } } = supabase.storage.from('session-images').getPublicUrl(path)
-
-      const { error: saveError } = await supabase
-        .from('sessions')
-        .update({ cover_image_url: publicUrl, image_prompt: imageExtraNotes.trim() || null })
-        .eq('public_id', public_id)
-      if (saveError) throw saveError
-
+      const result = await apiPost<{ publicUrl: string; inks: number }>('/api/generate-session-image', authSession, {
+        publicId: public_id,
+        extraNotes: imageExtraNotes,
+        includeCampaignName: imgToggleCampaignName,
+        includeTitle: imgToggleTitle,
+        includeCampaignNotes: imgToggleCampaignNotes,
+        includeCharacters: imgToggleCharacters,
+        includeTone: imgToggleTone,
+      })
+      queryClient.setQueryData(['profile', user?.id], (old: typeof profile) =>
+        old ? { ...old, inks: result.inks } : old
+      )
       queryClient.invalidateQueries({ queryKey: sessionQueryKey })
       setShowImageModal(false)
-    } catch {
-      setImageError('Image generation failed. Please try again.')
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : 'Image generation failed. Please try again.')
     } finally {
       setGeneratingImage(false)
     }
