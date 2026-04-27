@@ -196,7 +196,7 @@ export default function LandingPage() {
               Simple, transparent pricing.
             </h2>
             <p className="text-sm leading-relaxed" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-body)' }}>
-              Every account starts with <span style={{ color: 'var(--color-parchment)' }}>10 free inks</span>. AI actions spend ink — your balance is always visible in the header so you're never caught off guard.
+              Every account starts with <span style={{ color: 'var(--color-parchment)' }}>10 free inks</span>. AI actions spend ink — your balance is always visible in the header so you're never caught off guard. Ink purchases will be available once the app leaves early access.
             </p>
           </div>
 
