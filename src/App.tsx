@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './lib/queryClient'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { useProfile } from './hooks/useProfile'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
@@ -15,6 +16,8 @@ import ProfilePage from './pages/ProfilePage'
 import GroupsPage from './pages/GroupsPage'
 import GroupPage from './pages/GroupPage'
 import SavedPage from './pages/SavedPage'
+import AdminDashboardPage from './pages/admin/AdminDashboardPage'
+import AdminUsersPage from './pages/admin/AdminUsersPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
@@ -26,6 +29,15 @@ function GuestRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   if (loading) return null
   return session ? <Navigate to="/dashboard" replace /> : <>{children}</>
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { session, loading: authLoading } = useAuth()
+  const { profile, loading: profileLoading } = useProfile()
+  if (authLoading || profileLoading) return null
+  if (!session) return <Navigate to="/login" replace />
+  if (!profile?.is_admin) return <Navigate to="/dashboard" replace />
+  return <>{children}</>
 }
 
 function AppRoutes() {
@@ -44,6 +56,8 @@ function AppRoutes() {
       <Route path="/g/:public_id" element={<GroupPage />} />
       <Route path="/groups" element={<ProtectedRoute><GroupsPage /></ProtectedRoute>} />
       <Route path="/saved" element={<ProtectedRoute><SavedPage /></ProtectedRoute>} />
+      <Route path="/admin" element={<AdminRoute><AdminDashboardPage /></AdminRoute>} />
+      <Route path="/admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

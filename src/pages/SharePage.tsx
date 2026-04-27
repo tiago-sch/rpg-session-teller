@@ -121,33 +121,12 @@ export default function SharePage() {
 
   const saving = saveMutation.isPending || unsaveMutation.isPending
 
-  const headerRight = canSave ? (
-    <button
-      onClick={openSaveModal}
-      className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer"
-      style={{
-        fontFamily: 'var(--font-display)',
-        background: data?.savedId ? 'var(--color-gold-dim)' : 'var(--color-surface-raised)',
-        border: `1px solid ${data?.savedId ? 'var(--color-gold)' : 'var(--color-border)'}`,
-        color: data?.savedId ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
-      }}
-    >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"
-          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-          fill={data?.savedId ? 'currentColor' : 'none'}
-        />
-      </svg>
-      <span className="hidden sm:inline">{data?.savedId ? 'Saved' : 'Save'}</span>
-    </button>
-  ) : undefined
-
   return (
     <div
       className="min-h-screen flex flex-col"
       style={{ background: 'radial-gradient(ellipse at 50% 0%, #1e1830 0%, var(--color-ink) 60%)' }}
     >
-      <AppHeader right={headerRight} />
+      <AppHeader />
 
       <main className="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         {isLoading && (
@@ -167,6 +146,30 @@ export default function SharePage() {
 
         {data && (
           <div className="flex flex-col gap-8">
+            {/* Action bar */}
+            {canSave && (
+              <div className="flex justify-end">
+                <button
+                  onClick={openSaveModal}
+                  className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer"
+                  style={{
+                    fontFamily: 'var(--font-display)',
+                    background: data?.savedId ? 'var(--color-gold-dim)' : 'var(--color-surface-raised)',
+                    border: `1px solid ${data?.savedId ? 'var(--color-gold)' : 'var(--color-border)'}`,
+                    color: data?.savedId ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"
+                      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                      fill={data?.savedId ? 'currentColor' : 'none'}
+                    />
+                  </svg>
+                  <span className="hidden sm:inline">{data?.savedId ? 'Saved' : 'Save'}</span>
+                </button>
+              </div>
+            )}
+
             {fromGroup && (
               <Link
                 to={`/g/${fromGroup.public_id}`}

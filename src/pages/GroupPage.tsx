@@ -248,63 +248,6 @@ export default function GroupPage() {
 
   const savingGroup = saveGroupMutation.isPending || unsaveGroupMutation.isPending
 
-  const headerRight = group && !editing ? (
-    <>
-      {isOwner && (
-        <button
-          onClick={() => { setEditTitle(group.title); setEditDesc(group.description ?? ''); setEditing(true) }}
-          className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-colors cursor-pointer"
-          style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
-          onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
-          onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
-        >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-          </svg>
-          <span className="hidden sm:inline">Edit</span>
-        </button>
-      )}
-      {canSave && (
-        <button
-          onClick={() => group.savedId ? unsaveGroupMutation.mutate(group.savedId) : saveGroupMutation.mutate()}
-          disabled={savingGroup}
-          className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer disabled:opacity-40"
-          style={{
-            fontFamily: 'var(--font-display)',
-            background: group.savedId ? 'var(--color-gold-dim)' : 'var(--color-surface-raised)',
-            border: `1px solid ${group.savedId ? 'var(--color-gold)' : 'var(--color-border)'}`,
-            color: group.savedId ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
-          }}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"
-              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-              fill={group.savedId ? 'currentColor' : 'none'}
-            />
-          </svg>
-          <span className="hidden sm:inline">{group.savedId ? 'Saved' : 'Save'}</span>
-        </button>
-      )}
-      <button
-        onClick={handleCopy}
-        className="flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer"
-        style={{
-          fontFamily: 'var(--font-display)',
-          background: copied ? 'var(--color-gold-dim)' : 'var(--color-surface-raised)',
-          border: `1px solid ${copied ? 'var(--color-gold)' : 'var(--color-border)'}`,
-          color: copied ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
-        }}
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-        </svg>
-        <span className="hidden sm:inline">{copied ? 'Copied!' : 'Share'}</span>
-      </button>
-    </>
-  ) : undefined
-
   const q = search.toLowerCase()
   const match = (s: PickableSession) =>
     (s.title + ' ' + (s.campaigns?.name ?? '')).toLowerCase().includes(q)
@@ -317,7 +260,7 @@ export default function GroupPage() {
       className="min-h-screen flex flex-col"
       style={{ background: 'radial-gradient(ellipse at 50% 0%, #1e1830 0%, var(--color-ink) 60%)' }}
     >
-      <AppHeader right={headerRight} />
+      <AppHeader />
 
       <main className="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12 flex flex-col gap-8">
         {isLoading && (
@@ -389,6 +332,61 @@ export default function GroupPage() {
               </form>
             ) : (
               <div>
+                {/* Action bar */}
+                <div className="flex justify-end gap-2 mb-4">
+                  {isOwner && (
+                    <button
+                      onClick={() => { setEditTitle(group.title); setEditDesc(group.description ?? ''); setEditing(true) }}
+                      className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-colors cursor-pointer"
+                      style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
+                      onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
+                      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                      </svg>
+                      <span className="hidden sm:inline">Edit</span>
+                    </button>
+                  )}
+                  {canSave && (
+                    <button
+                      onClick={() => group.savedId ? unsaveGroupMutation.mutate(group.savedId) : saveGroupMutation.mutate()}
+                      disabled={savingGroup}
+                      className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer disabled:opacity-40"
+                      style={{
+                        fontFamily: 'var(--font-display)',
+                        background: group.savedId ? 'var(--color-gold-dim)' : 'var(--color-surface-raised)',
+                        border: `1px solid ${group.savedId ? 'var(--color-gold)' : 'var(--color-border)'}`,
+                        color: group.savedId ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
+                      }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"
+                          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                          fill={group.savedId ? 'currentColor' : 'none'}
+                        />
+                      </svg>
+                      <span className="hidden sm:inline">{group.savedId ? 'Saved' : 'Save'}</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={handleCopy}
+                    className="flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer"
+                    style={{
+                      fontFamily: 'var(--font-display)',
+                      background: copied ? 'var(--color-gold-dim)' : 'var(--color-surface-raised)',
+                      border: `1px solid ${copied ? 'var(--color-gold)' : 'var(--color-border)'}`,
+                      color: copied ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
+                    <span className="hidden sm:inline">{copied ? 'Copied!' : 'Share'}</span>
+                  </button>
+                </div>
                 <h1
                   className="text-2xl sm:text-3xl font-semibold tracking-wide mb-2"
                   style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}

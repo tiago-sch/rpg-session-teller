@@ -5,6 +5,7 @@ import { queryClient } from '../lib/queryClient'
 import { generateSession, TONES } from '../lib/gemini'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useProfile } from '../hooks/useProfile'
 import CampaignSelect from '../components/CampaignSelect'
 import AppHeader from '../components/AppHeader'
 import { useDraft, formatDraftAge } from '../hooks/useDraft'
@@ -14,6 +15,7 @@ export default function NewSessionPage() {
   const location = useLocation()
   const navCampaignId = (location.state as { campaignId?: number } | null)?.campaignId ?? null
   const { user } = useAuth()
+  const { profile, spendInks } = useProfile()
   const [title, setTitle] = useState('')
   const [campaignId, setCampaignId] = useState<number | null>(navCampaignId)
   const [prompt, setPrompt] = useState('')
@@ -66,6 +68,9 @@ export default function NewSessionPage() {
 
   const mutation = useMutation({
     mutationFn: async () => {
+      const inkErr = await spendInks(1)
+      if (inkErr) throw new Error(inkErr)
+
       let campaignHistory: string[] | undefined
       if (historyEnabled && campaignId) {
         const { data } = await supabase
@@ -335,26 +340,39 @@ export default function NewSessionPage() {
             </p>
           )}
 
-          <button
-            type="submit"
-            disabled={generating}
-            className="py-3 rounded-lg text-sm font-semibold tracking-widest uppercase transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{
-              fontFamily: 'var(--font-display)',
-              background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)',
-              color: '#0c0a14',
-              border: '1px solid var(--color-gold-dim)',
-              boxShadow: '0 0 20px rgba(200,145,58,0.2)',
-            }}
-          >
-            {generating ? (
-              <span className="flex items-center justify-center gap-2">
-                <Spinner /> Chronicling the session…
+          <div className="flex flex-col gap-2">
+            <button
+              type="submit"
+              disabled={generating || (profile !== null && profile.inks < 1)}
+              className="py-3 rounded-lg text-sm font-semibold tracking-widest uppercase transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{
+                fontFamily: 'var(--font-display)',
+                background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)',
+                color: '#0c0a14',
+                border: '1px solid var(--color-gold-dim)',
+                boxShadow: '0 0 20px rgba(200,145,58,0.2)',
+              }}
+            >
+              {generating ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Spinner /> Chronicling the session…
+                </span>
+              ) : (
+                'Tell the Story'
+              )}
+            </button>
+            <div className="flex items-center justify-center gap-1.5">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" style={{ color: profile !== null && profile.inks < 1 ? '#e07070' : 'var(--color-gold)' }}>
+                <path d="M12 2C12 2 5 10 5 15a7 7 0 0 0 14 0c0-5-7-13-7-13z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
+              </svg>
+              <span
+                className="text-xs"
+                style={{ fontFamily: 'var(--font-display)', color: profile !== null && profile.inks < 1 ? '#e07070' : 'var(--color-parchment-muted)', letterSpacing: '0.04em' }}
+              >
+                {profile !== null && profile.inks < 1 ? 'Not enough ink' : 'Costs 1 ink'}
               </span>
-            ) : (
-              'Tell the Story'
-            )}
-          </button>
+            </div>
+          </div>
         </form>
       </main>
     </div>

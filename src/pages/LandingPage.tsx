@@ -6,60 +6,12 @@ export default function LandingPage() {
   const navigate = useNavigate()
   const { user, loading } = useAuth()
 
-  const headerRight = !loading ? (
-    user ? (
-      <button
-        onClick={() => navigate('/dashboard')}
-        className="px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer transition-all"
-        style={{
-          fontFamily: 'var(--font-display)',
-          background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)',
-          color: '#0c0a14',
-          border: '1px solid var(--color-gold-dim)',
-          boxShadow: '0 0 12px rgba(200,145,58,0.2)',
-        }}
-      >
-        My Chronicles
-      </button>
-    ) : (
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => navigate('/login')}
-          className="px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer transition-colors"
-          style={{
-            fontFamily: 'var(--font-display)',
-            background: 'var(--color-surface-raised)',
-            border: '1px solid var(--color-border)',
-            color: 'var(--color-parchment-muted)',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
-          onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
-        >
-          Sign in
-        </button>
-        <button
-          onClick={() => navigate('/register')}
-          className="px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer transition-all"
-          style={{
-            fontFamily: 'var(--font-display)',
-            background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)',
-            color: '#0c0a14',
-            border: '1px solid var(--color-gold-dim)',
-            boxShadow: '0 0 12px rgba(200,145,58,0.2)',
-          }}
-        >
-          Get started
-        </button>
-      </div>
-    )
-  ) : undefined
-
   return (
     <div
       className="min-h-screen flex flex-col"
       style={{ background: 'radial-gradient(ellipse at 50% 0%, #1e1830 0%, var(--color-ink) 70%)' }}
     >
-      <AppHeader right={headerRight} />
+      <AppHeader />
 
       <main className="flex-1 flex flex-col">
 

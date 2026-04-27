@@ -4,6 +4,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../lib/queryClient'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { useProfile } from '../hooks/useProfile'
 import { generateSession, generateImage, TONES } from '../lib/gemini'
 import CampaignSelect from '../components/CampaignSelect'
 import AppHeader from '../components/AppHeader'
@@ -20,6 +21,7 @@ interface Session {
   tone: string | null
   generated_text: string | null
   cover_image_url: string | null
+  image_prompt: string | null
   created_at: string
   updated_at: string
 }
@@ -46,6 +48,7 @@ export default function SessionPage() {
   const location = useLocation()
   const fromGroup = (location.state as { fromGroup?: { public_id: string; title: string } } | null)?.fromGroup
   const { user } = useAuth()
+  const { profile, spendInks } = useProfile()
 
   const [copied, setCopied] = useState(false)
 
@@ -64,6 +67,15 @@ export default function SessionPage() {
   const [generatingImage, setGeneratingImage] = useState(false)
   const [imageError, setImageError] = useState('')
   const [showDraftBanner, setShowDraftBanner] = useState(false)
+  const [showImageModal, setShowImageModal] = useState(false)
+  const [imageExtraNotes, setImageExtraNotes] = useState('')
+  const [imgToggleCampaignName, setImgToggleCampaignName] = useState(true)
+  const [imgToggleTitle, setImgToggleTitle] = useState(true)
+  const [imgToggleCampaignNotes, setImgToggleCampaignNotes] = useState(true)
+  const [imgToggleCharacters, setImgToggleCharacters] = useState(true)
+  const [imgToggleTone, setImgToggleTone] = useState(true)
+  const [imageModalChars, setImageModalChars] = useState<{ name: string; notes?: string | null }[]>([])
+  const [imageModalCharsLoading, setImageModalCharsLoading] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // regen confirmation
@@ -85,7 +97,7 @@ export default function SessionPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('sessions')
-        .select('id, user_id, title, campaign_id, campaigns(name, notes), tldr, prompt, tone, generated_text, cover_image_url, created_at, updated_at')
+        .select('id, user_id, title, campaign_id, campaigns(name, notes), tldr, prompt, tone, generated_text, cover_image_url, image_prompt, created_at, updated_at')
         .eq('public_id', public_id)
         .single()
       if (error || !data) throw new Error('Not found')
@@ -160,6 +172,8 @@ export default function SessionPage() {
     setRegenerating(true)
     setRegenError('')
     try {
+      const inkErr = await spendInks(1)
+      if (inkErr) { setRegenError(inkErr); setRegenerating(false); return }
       let campaignHistory: string[] | undefined
       let campaignContext: { notes?: string | null; characters?: { name: string; notes?: string | null }[] } | undefined
 
@@ -195,30 +209,49 @@ export default function SessionPage() {
     }
   }
 
+  const openImageModal = async () => {
+    setImageExtraNotes(session?.image_prompt ?? '')
+    setImgToggleCampaignName(true)
+    setImgToggleTitle(true)
+    setImgToggleCampaignNotes(true)
+    setImgToggleCharacters(true)
+    setImgToggleTone(true)
+    setImageError('')
+    setShowImageModal(true)
+    if (session?.campaign_id) {
+      setImageModalCharsLoading(true)
+      const { data: chars } = await supabase
+        .from('campaign_characters')
+        .select('name, notes')
+        .eq('campaign_id', session.campaign_id)
+        .order('sort_order')
+      setImageModalChars(((chars ?? []) as { name: string; notes?: string | null }[]).filter(c => c.name.trim()))
+      setImageModalCharsLoading(false)
+    } else {
+      setImageModalChars([])
+    }
+  }
+
   const handleGenerateImage = async () => {
     if (!session || !user) return
     setGeneratingImage(true)
     setImageError('')
     try {
+      const inkErr = await spendInks(3)
+      if (inkErr) { setImageError(inkErr); setGeneratingImage(false); return }
       const toneName = TONES.find(t => t.id === session.tone)?.label
       const parts: string[] = []
-      if (session.campaigns?.name) parts.push(`Campaign: ${session.campaigns.name}`)
-      if (session.title) parts.push(`Session: ${session.title}`)
-      if (session.tldr) parts.push(`Summary: ${session.tldr}`)
-      if (session.campaigns?.notes) parts.push(`World context: ${session.campaigns.notes}`)
-      if (session.campaign_id) {
-        const { data: chars } = await supabase
-          .from('campaign_characters')
-          .select('name, notes')
-          .eq('campaign_id', session.campaign_id)
-          .order('sort_order')
-        const characters = ((chars ?? []) as { name: string; notes?: string | null }[]).filter(c => c.name.trim())
-        if (characters.length > 0) {
-          const charLines = characters.map(c => c.notes?.trim() ? `- ${c.name}: ${c.notes}` : `- ${c.name}`)
-          parts.push(`Key characters:\n${charLines.join('\n')}`)
-        }
+      if (imgToggleCampaignName && session.campaigns?.name) parts.push(`Campaign: ${session.campaigns.name}`)
+      if (imgToggleTitle && session.title) parts.push(`Session: ${session.title}`)
+      if (session.prompt) parts.push(`Session notes: ${session.prompt}`)
+      if (imgToggleCampaignNotes && session.campaigns?.notes) parts.push(`World context: ${session.campaigns.notes}`)
+      if (imgToggleCharacters && imageModalChars.length > 0) {
+        const charLines = imageModalChars.map(c => c.notes?.trim() ? `- ${c.name}: ${c.notes}` : `- ${c.name}`)
+        parts.push(`Key characters:\n${charLines.join('\n')}`)
       }
-      if (toneName) parts.push(`Tone: ${toneName}`)
+      if (imgToggleTone && toneName) parts.push(`Tone: ${toneName}`)
+      if (imageExtraNotes.trim()) parts.push(`Additional context: ${imageExtraNotes.trim()}`)
+      if (!imgToggleTone || !toneName) parts.push('Style: fantasy illustration, realistic painterly style, not cartoony')
       parts.push('Create a single evocative fantasy scene illustration based on this session. No text, no borders.')
       const imagePrompt = parts.join('\n')
 
@@ -236,11 +269,12 @@ export default function SessionPage() {
 
       const { error: saveError } = await supabase
         .from('sessions')
-        .update({ cover_image_url: publicUrl })
+        .update({ cover_image_url: publicUrl, image_prompt: imageExtraNotes.trim() || null })
         .eq('public_id', public_id)
       if (saveError) throw saveError
 
       queryClient.invalidateQueries({ queryKey: sessionQueryKey })
+      setShowImageModal(false)
     } catch {
       setImageError('Image generation failed. Please try again.')
     } finally {
@@ -330,63 +364,12 @@ export default function SessionPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const headerRight = session && !showEdit ? (
-    <>
-      <button
-        onClick={openGroupModal}
-        className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-colors cursor-pointer"
-        style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
-        onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
-        onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
-      >
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
-          <line x1="8" y1="6" x2="21" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-          <line x1="8" y1="12" x2="21" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-          <line x1="8" y1="18" x2="21" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-          <circle cx="3" cy="6" r="1.5" fill="currentColor"/>
-          <circle cx="3" cy="12" r="1.5" fill="currentColor"/>
-          <circle cx="3" cy="18" r="1.5" fill="currentColor"/>
-        </svg>
-        <span className="hidden sm:inline">Groups</span>
-      </button>
-      <button
-        onClick={openEdit}
-        className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-colors cursor-pointer"
-        style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
-        onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
-        onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
-      >
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
-          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-        </svg>
-        <span className="hidden sm:inline">Edit</span>
-      </button>
-      <button
-        onClick={handleCopy}
-        className="flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer"
-        style={{
-          fontFamily: 'var(--font-display)',
-          background: copied ? 'var(--color-gold-dim)' : 'var(--color-surface-raised)',
-          border: `1px solid ${copied ? 'var(--color-gold)' : 'var(--color-border)'}`,
-          color: copied ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
-        }}
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-          <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-          <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-        </svg>
-        <span className="hidden sm:inline">{copied ? 'Copied!' : 'Share'}</span>
-      </button>
-    </>
-  ) : undefined
-
   return (
     <div
       className="min-h-screen flex flex-col"
       style={{ background: 'radial-gradient(ellipse at 50% 0%, #1e1830 0%, var(--color-ink) 60%)' }}
     >
-      <AppHeader right={headerRight} />
+      <AppHeader />
 
       <main className="flex-1 w-full max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         {isLoading && (
@@ -560,21 +543,24 @@ export default function SessionPage() {
                   </div>
                 </div>
                 {regenError && <p className="text-xs" style={{ color: '#e07070' }}>{regenError}</p>}
-                <button
-                  type="button"
-                  onClick={handleRegenerate}
-                  disabled={regenerating || !editPromptValue.trim()}
-                  className="flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                  style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)', color: '#0c0a14', border: '1px solid var(--color-gold-dim)', boxShadow: '0 0 20px rgba(200,145,58,0.2)' }}
-                >
-                  {regenerating && (
-                    <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
-                      <circle cx="12" cy="12" r="10" stroke="rgba(0,0,0,0.3)" strokeWidth="3" />
-                      <path d="M12 2a10 10 0 0 1 10 10" stroke="#0c0a14" strokeWidth="3" strokeLinecap="round" />
-                    </svg>
-                  )}
-                  {regenerating ? 'Generating…' : 'Regenerate Chronicle'}
-                </button>
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={handleRegenerate}
+                    disabled={regenerating || !editPromptValue.trim() || (profile !== null && profile.inks < 1)}
+                    className="flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                    style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)', color: '#0c0a14', border: '1px solid var(--color-gold-dim)', boxShadow: '0 0 20px rgba(200,145,58,0.2)' }}
+                  >
+                    {regenerating && (
+                      <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="10" stroke="rgba(0,0,0,0.3)" strokeWidth="3" />
+                        <path d="M12 2a10 10 0 0 1 10 10" stroke="#0c0a14" strokeWidth="3" strokeLinecap="round" />
+                      </svg>
+                    )}
+                    {regenerating ? 'Generating…' : 'Regenerate Chronicle'}
+                  </button>
+                  <InkCost amount={1} insufficient={profile !== null && profile.inks < 1} />
+                </div>
               </div>
             )}
 
@@ -624,56 +610,95 @@ export default function SessionPage() {
         {/* ── Session view ── */}
         {session && !showEdit && (
           <div className="flex flex-col gap-8">
+            {/* Action bar */}
+            <div className="flex justify-end gap-2">
+              {!session.cover_image_url && (
+                <button
+                  onClick={openImageModal}
+                  className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-colors cursor-pointer"
+                  style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
+                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
+                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+                    <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/>
+                    <path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <span className="hidden sm:inline">Scene Image</span>
+                </button>
+              )}
+              <button
+                onClick={openGroupModal}
+                className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-colors cursor-pointer"
+                style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+                  <line x1="8" y1="6" x2="21" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  <line x1="8" y1="12" x2="21" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  <line x1="8" y1="18" x2="21" y2="18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  <circle cx="3" cy="6" r="1.5" fill="currentColor"/>
+                  <circle cx="3" cy="12" r="1.5" fill="currentColor"/>
+                  <circle cx="3" cy="18" r="1.5" fill="currentColor"/>
+                </svg>
+                <span className="hidden sm:inline">Groups</span>
+              </button>
+              <button
+                onClick={openEdit}
+                className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-colors cursor-pointer"
+                style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+                <span className="hidden sm:inline">Edit</span>
+              </button>
+              <button
+                onClick={handleCopy}
+                className="flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer"
+                style={{
+                  fontFamily: 'var(--font-display)',
+                  background: copied ? 'var(--color-gold-dim)' : 'var(--color-surface-raised)',
+                  border: `1px solid ${copied ? 'var(--color-gold)' : 'var(--color-border)'}`,
+                  color: copied ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+                <span className="hidden sm:inline">{copied ? 'Copied!' : 'Share'}</span>
+              </button>
+            </div>
             {session.cover_image_url && (
-              <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+              <div className="relative rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
                 <img
                   src={session.cover_image_url}
                   alt="Session cover"
                   className="w-full object-cover"
                   style={{ maxHeight: '400px' }}
                 />
+                <button
+                  onClick={openImageModal}
+                  className="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer transition-opacity"
+                  style={{ fontFamily: 'var(--font-display)', background: 'rgba(12,10,20,0.75)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.8)', backdropFilter: 'blur(6px)' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(12,10,20,0.9)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(12,10,20,0.75)')}
+                  title="Edit scene image"
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                  <span className="hidden sm:inline">Edit</span>
+                </button>
               </div>
             )}
-
-            {imageError && (
-              <p className="text-xs text-center" style={{ color: '#e07070' }}>{imageError}</p>
-            )}
-
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={handleGenerateImage}
-                disabled={generatingImage}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  background: 'var(--color-surface-raised)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-parchment-muted)',
-                }}
-                onMouseEnter={e => !generatingImage && (e.currentTarget.style.borderColor = 'var(--color-border-bright)')}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
-              >
-                {generatingImage ? (
-                  <>
-                    <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none">
-                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3"/>
-                      <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-                    </svg>
-                    Painting the scene…
-                  </>
-                ) : (
-                  <>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
-                      <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="2"/>
-                      <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/>
-                      <path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                    {session.cover_image_url ? 'Regenerate Scene Image' : 'Generate Scene Image'}
-                  </>
-                )}
-              </button>
-            </div>
 
             {fromGroup && (
               <Link
@@ -803,6 +828,156 @@ export default function SessionPage() {
         </div>
       )}
 
+      {/* Image generation modal */}
+      {showImageModal && session && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4"
+          style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)' }}
+          onClick={() => { if (!generatingImage) setShowImageModal(false) }}
+        >
+          <div
+            className="relative w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl shadow-2xl"
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border-bright)', boxShadow: '0 0 60px rgba(200,145,58,0.08), 0 24px 48px rgba(0,0,0,0.6)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
+              <div>
+                <p className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Scene Image</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--color-parchment-muted)' }}>
+                  {session.cover_image_url ? 'Regenerate the scene illustration' : 'Generate a scene illustration'}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowImageModal(false)}
+                disabled={generatingImage}
+                className="flex items-center justify-center w-7 h-7 rounded-lg cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-60"
+                style={{ color: 'var(--color-parchment-muted)' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-6 py-5 flex flex-col gap-5">
+              {/* Current image preview */}
+              {session.cover_image_url && (
+                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
+                  <img
+                    src={session.cover_image_url}
+                    alt="Current scene"
+                    className="w-full object-cover"
+                    style={{ maxHeight: '200px' }}
+                  />
+                </div>
+              )}
+
+              {/* Context toggles */}
+              <div className="flex flex-col">
+                <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>
+                  Include in prompt
+                </p>
+                {[
+                  { label: 'Campaign name', value: imgToggleCampaignName, set: setImgToggleCampaignName, available: !!session.campaigns?.name, hint: session.campaigns?.name },
+                  { label: 'Session title', value: imgToggleTitle, set: setImgToggleTitle, available: !!session.title, hint: session.title },
+                  { label: 'Campaign notes', value: imgToggleCampaignNotes, set: setImgToggleCampaignNotes, available: !!session.campaigns?.notes, hint: null },
+                  { label: 'Characters', value: imgToggleCharacters, set: setImgToggleCharacters, available: !imageModalCharsLoading && (imageModalChars.length > 0 || !!session.campaign_id), hint: imageModalCharsLoading ? 'Loading…' : imageModalChars.length > 0 ? imageModalChars.map(c => c.name).join(', ') : null },
+                  { label: 'Session tone', value: imgToggleTone, set: setImgToggleTone, available: !!session.tone, hint: TONES.find(t => t.id === session.tone)?.label ?? null },
+                ].map(({ label, value, set, available, hint }, i, arr) => (
+                  <div
+                    key={label}
+                    className="flex items-center justify-between gap-3 py-3"
+                    style={{
+                      opacity: available ? 1 : 0.4,
+                      borderBottom: i < arr.length - 1 ? '1px solid var(--color-border)' : undefined,
+                    }}
+                  >
+                    <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                      <span className="text-sm" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}>{label}</span>
+                      {hint && (
+                        <span className="text-xs truncate" style={{ color: 'var(--color-parchment-muted)' }}>{hint}</span>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={value && available}
+                      disabled={!available || generatingImage}
+                      onClick={() => set(v => !v)}
+                      className="relative shrink-0 rounded-full transition-colors cursor-pointer disabled:cursor-not-allowed overflow-hidden"
+                      style={{ width: '36px', height: '20px', background: value && available ? 'var(--color-gold)' : 'var(--color-border-bright)' }}
+                    >
+                      <span
+                        className="absolute top-0.5 left-0 rounded-full transition-transform"
+                        style={{ width: '16px', height: '16px', background: value && available ? '#0c0a14' : 'var(--color-ink)', transform: value && available ? 'translateX(18px)' : 'translateX(2px)' }}
+                      />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Extra notes */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>
+                  Extra notes <span style={{ color: 'var(--color-mist)', textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+                </label>
+                <textarea
+                  value={imageExtraNotes}
+                  onChange={e => setImageExtraNotes(e.target.value)}
+                  disabled={generatingImage}
+                  rows={3}
+                  placeholder="e.g. Focus on the dragon, dramatic lighting, dusk sky…"
+                  className="px-3 py-2.5 rounded-lg text-sm leading-relaxed resize-none focus:outline-none disabled:opacity-50"
+                  style={{ background: 'var(--color-ink-soft)', border: '1px solid var(--color-border)', color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}
+                  onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
+                  onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+                />
+              </div>
+
+              {imageError && (
+                <p className="text-xs" style={{ color: '#e07070' }}>{imageError}</p>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex flex-col gap-2 px-6 py-4 shrink-0" style={{ borderTop: '1px solid var(--color-border)' }}>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleGenerateImage}
+                  disabled={generatingImage || (profile !== null && profile.inks < 3)}
+                  className="flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  style={{ fontFamily: 'var(--font-display)', background: 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)', color: '#0c0a14', border: '1px solid var(--color-gold-dim)' }}
+                >
+                  {generatingImage ? (
+                    <>
+                      <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none">
+                        <circle cx="12" cy="12" r="10" stroke="rgba(0,0,0,0.3)" strokeWidth="3"/>
+                        <path d="M12 2a10 10 0 0 1 10 10" stroke="#0c0a14" strokeWidth="3" strokeLinecap="round"/>
+                      </svg>
+                      Painting the scene…
+                    </>
+                  ) : (
+                    session.cover_image_url ? 'Regenerate' : 'Generate'
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowImageModal(false)}
+                  disabled={generatingImage}
+                  className="px-5 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase cursor-pointer disabled:opacity-40"
+                  style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
+                >
+                  Cancel
+                </button>
+              </div>
+              <InkCost amount={3} insufficient={profile !== null && profile.inks < 3} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Regeneration confirmation modal */}
       {pendingRegen && (
         <div
@@ -854,4 +1029,17 @@ export default function SessionPage() {
 
 function fmt(date: string) {
   return new Date(date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function InkCost({ amount, insufficient }: { amount: number; insufficient: boolean }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" style={{ color: insufficient ? '#e07070' : 'var(--color-gold)', flexShrink: 0 }}>
+        <path d="M12 2C12 2 5 10 5 15a7 7 0 0 0 14 0c0-5-7-13-7-13z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
+      </svg>
+      <span className="text-xs" style={{ fontFamily: 'var(--font-display)', color: insufficient ? '#e07070' : 'var(--color-parchment-muted)', letterSpacing: '0.04em' }}>
+        {insufficient ? 'Not enough ink' : `Costs ${amount} ink`}
+      </span>
+    </div>
+  )
 }

@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext'
 
 export interface Profile {
   display_name: string | null
+  is_admin: boolean
+  inks: number
 }
 
 export function useProfile() {
@@ -15,7 +17,7 @@ export function useProfile() {
     queryFn: async () => {
       const { data } = await supabase
         .from('profiles')
-        .select('display_name')
+        .select('display_name, is_admin, inks')
         .eq('id', user!.id)
         .single()
       return (data as Profile | null) ?? null
@@ -44,5 +46,19 @@ export function useProfile() {
     }
   }
 
-  return { profile, loading, update }
+  // Atomically deduct inks via RPC. Returns an error string if insufficient or RPC fails.
+  // On success, immediately patches the cached profile so the navbar updates without a refetch.
+  const spendInks = async (amount: number): Promise<string | undefined> => {
+    const { data: newBalance, error } = await supabase.rpc('spend_inks', { amount })
+    if (error) {
+      if (error.message.includes('not_enough_inks')) return 'Not enough ink.'
+      return error.message
+    }
+    queryClient.setQueryData(['profile', user?.id], (old: Profile | null) =>
+      old ? { ...old, inks: newBalance as number } : old
+    )
+    return undefined
+  }
+
+  return { profile, loading, update, spendInks }
 }
