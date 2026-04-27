@@ -37,7 +37,7 @@ export default function LandingPage() {
             className="text-base sm:text-lg leading-relaxed max-w-xl mb-10"
             style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-body)' }}
           >
-            Paste your session notes and let AI transform them into a vivid chronicle — an immersive narrative your whole table will remember. Edit, organise, share, and discover stories from adventurers around the world.
+            Paste your session notes and let AI transform them into a vivid chronicle — an immersive narrative your whole table will remember. Edit, organise, share, and bring your story to life with scene illustrations.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center gap-3">
@@ -95,7 +95,6 @@ export default function LandingPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 sm:gap-0 relative">
-            {/* connecting line on desktop */}
             <div
               className="hidden sm:block absolute top-8 left-1/6 right-1/6 h-px"
               style={{ background: 'linear-gradient(to right, transparent, var(--color-border), var(--color-border), transparent)' }}
@@ -112,8 +111,117 @@ export default function LandingPage() {
             />
             <Step
               number="03"
-              title="Share & discover"
-              body="Drop a public link in your group chat. Organise chronicles into groups. Save favourites from other adventurers."
+              title="Illustrate & share"
+              body="Generate a scene illustration, drop a public link in your group chat, and organise chronicles into campaigns and groups."
+            />
+          </div>
+        </section>
+
+        <Divider />
+
+        {/* ── Scene Illustration Showcase ── */}
+        <section className="px-4 sm:px-8 lg:px-16 py-16 sm:py-24 flex flex-col lg:flex-row items-center gap-12 lg:gap-20 max-w-7xl mx-auto w-full">
+          {/* Image */}
+          <div className="w-full lg:w-1/2 shrink-0">
+            <div
+              className="rounded-2xl overflow-hidden relative"
+              style={{ border: '1px solid var(--color-border-bright)', boxShadow: '0 0 60px rgba(200,145,58,0.08), 0 24px 64px rgba(0,0,0,0.6)' }}
+            >
+              <img
+                src="/screenshots/pinoquio-scene.jpg"
+                alt="AI generated scene illustration for the Pinóquio chronicle"
+                className="w-full object-cover"
+                style={{ maxHeight: '420px' }}
+              />
+              {/* Caption badge */}
+              <div
+                className="absolute bottom-3 left-3 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase"
+                style={{ background: 'rgba(12,10,20,0.82)', border: '1px solid rgba(200,145,58,0.25)', color: 'var(--color-gold)', fontFamily: 'var(--font-display)', backdropFilter: 'blur(6px)' }}
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                  <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="2"/>
+                  <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/>
+                  <path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                AI-generated · Pinóquio
+              </div>
+            </div>
+          </div>
+
+          {/* Text */}
+          <div className="flex flex-col gap-6 lg:w-1/2">
+            <div>
+              <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>
+                Scene Illustrations
+              </p>
+              <h2 className="text-2xl sm:text-3xl font-semibold tracking-wide leading-snug mb-4" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}>
+                Paint your story<br />with one click.
+              </h2>
+              <p className="text-base leading-relaxed" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-body)' }}>
+                Generate a fantasy scene illustration for any chronicle using Gemini. The AI uses your session notes, campaign context, characters, and tone to craft a painterly image that captures the mood of the adventure — no prompting skills required.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {[
+                { label: 'Uses your session context', desc: 'Campaign name, characters, tone and notes are all woven into the prompt automatically.' },
+                { label: 'Fully customisable', desc: 'Toggle which context to include and add extra notes to guide the style or focus.' },
+                { label: 'Fantasy by default', desc: 'Without a tone, the illustration defaults to a realistic painterly fantasy style — never cartoony.' },
+              ].map(({ label, desc }) => (
+                <div key={label} className="flex gap-3">
+                  <div className="mt-1 shrink-0 w-4 h-4 rounded-full flex items-center justify-center" style={{ background: 'var(--color-gold-dim)', border: '1px solid var(--color-gold)' }}>
+                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none">
+                      <path d="M20 6L9 17l-5-5" stroke="var(--color-gold)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold mb-0.5" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}>{label}</p>
+                    <p className="text-sm leading-relaxed" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-body)' }}>{desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <Divider />
+
+        {/* ── Ink Credits ── */}
+        <section className="px-6 sm:px-12 lg:px-20 py-16 sm:py-20 flex flex-col gap-10 items-center">
+          <div className="text-center max-w-xl">
+            <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>
+              Ink Credits
+            </p>
+            <h2 className="text-xl sm:text-2xl font-semibold tracking-wide mb-4" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}>
+              Simple, transparent pricing.
+            </h2>
+            <p className="text-sm leading-relaxed" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-body)' }}>
+              Every account starts with <span style={{ color: 'var(--color-parchment)' }}>10 free inks</span>. AI actions spend ink — your balance is always visible in the header so you're never caught off guard.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 w-full max-w-2xl">
+            <InkCard
+              icon={
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              }
+              amount={1}
+              label="Chronicle generation"
+              desc="Generate or regenerate the full narrative from your session notes."
+            />
+            <InkCard
+              icon={
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.5"/>
+                  <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/>
+                  <path d="M21 15l-5-5L5 21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              }
+              amount={3}
+              label="Scene illustration"
+              desc="Generate an AI scene image for a chronicle using your campaign context."
             />
           </div>
         </section>
@@ -138,7 +246,7 @@ export default function LandingPage() {
           </div>
 
           <div
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px rounded-2xl overflow-hidden"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px rounded-2xl overflow-hidden"
             style={{ border: '1px solid var(--color-border)' }}
           >
             <Feature
@@ -148,7 +256,18 @@ export default function LandingPage() {
                 </svg>
               }
               title="AI Chronicles"
-              body="Gemini transforms your bullet-point notes into immersive narrative prose. Names, quotes, and events preserved exactly — no hallucinations."
+              body="Gemini transforms your bullet-point notes into immersive narrative prose. Names, quotes, and events preserved exactly."
+            />
+            <Feature
+              icon={
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <rect x="3" y="3" width="18" height="18" rx="2" stroke="var(--color-gold)" strokeWidth="1.5"/>
+                  <circle cx="8.5" cy="8.5" r="1.5" fill="var(--color-gold)"/>
+                  <path d="M21 15l-5-5L5 21" stroke="var(--color-gold)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              }
+              title="Scene Illustrations"
+              body="Generate a painterly fantasy scene image for any chronicle. Guided by your campaign, characters, and session tone."
             />
             <Feature
               icon={
@@ -178,7 +297,7 @@ export default function LandingPage() {
                 </svg>
               }
               title="Session Groups"
-              body="Curate public collections of chronicles — best-of-campaign highlights, one-shots, legendary encounters — and share them as a single link."
+              body="Curate public collections of chronicles — best-of-campaign highlights, one-shots, legendary encounters — and share as a single link."
             />
             <Feature
               icon={
@@ -198,6 +317,15 @@ export default function LandingPage() {
               }
               title="Saved Chronicles"
               body="Bookmark sessions from other adventurers. Add a personal note to remember why a chronicle caught your eye."
+            />
+            <Feature
+              icon={
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 2C12 2 5 10 5 15a7 7 0 0 0 14 0c0-5-7-13-7-13z" stroke="var(--color-gold)" strokeWidth="1.5" strokeLinejoin="round"/>
+                </svg>
+              }
+              title="Ink Credits"
+              body="Start with 10 free inks. Chronicle generation costs 1 ink, scene illustrations cost 3. Your balance lives in the header, always visible."
             />
           </div>
         </section>
@@ -219,7 +347,7 @@ export default function LandingPage() {
             className="text-sm sm:text-base leading-relaxed max-w-md"
             style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-body)' }}
           >
-            Your sessions are worth remembering. Start writing and let the chronicles begin.
+            Your sessions are worth remembering. Start writing, generate your first chronicle, and paint the scene.
           </p>
           <button
             onClick={() => navigate(user ? '/dashboard' : '/register')}
@@ -343,6 +471,35 @@ function Feature({ icon, title, body }: { icon: React.ReactNode; title: string; 
         >
           {body}
         </p>
+      </div>
+    </div>
+  )
+}
+
+function InkCard({ icon, amount, label, desc }: { icon: React.ReactNode; amount: number; label: string; desc: string }) {
+  return (
+    <div
+      className="flex-1 flex flex-col gap-4 rounded-2xl px-6 py-7"
+      style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+    >
+      <div className="flex items-center justify-between">
+        <div
+          className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border-bright)', color: 'var(--color-gold)' }}
+        >
+          {icon}
+        </div>
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg" style={{ background: 'rgba(200,145,58,0.1)', border: '1px solid rgba(200,145,58,0.25)' }}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" style={{ color: 'var(--color-gold)' }}>
+            <path d="M12 2C12 2 5 10 5 15a7 7 0 0 0 14 0c0-5-7-13-7-13z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
+          </svg>
+          <span className="text-sm font-bold tabular-nums" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>{amount}</span>
+          <span className="text-xs" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)', opacity: 0.7 }}>ink</span>
+        </div>
+      </div>
+      <div>
+        <p className="text-sm font-semibold tracking-widest uppercase mb-1.5" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}>{label}</p>
+        <p className="text-sm leading-relaxed" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-body)' }}>{desc}</p>
       </div>
     </div>
   )
