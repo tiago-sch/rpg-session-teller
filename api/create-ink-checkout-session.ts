@@ -1,12 +1,9 @@
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { getInkPack } from '../src/lib/inkPacks'
-import { serverEnv } from './_env'
+import { getAppUrl, requiredEnv, requiredEnvAny } from './_env'
 import { readJsonBody, sendError } from './_http'
 import type { ApiRequest, ApiResponse } from './_http'
-
-const stripe = new Stripe(serverEnv.stripeSecretKey)
-const supabase = createClient(serverEnv.supabaseUrl, serverEnv.supabaseAnonKey)
 
 function getBearerToken(req: ApiRequest) {
   const header = req.headers.authorization
@@ -21,6 +18,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   }
 
   try {
+    const stripe = new Stripe(requiredEnv('STRIPE_SECRET_KEY'))
+    const supabase = createClient(
+      requiredEnvAny('SUPABASE_URL', 'VITE_SUPABASE_URL'),
+      requiredEnvAny('SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY')
+    )
+
     const token = getBearerToken(req)
     if (!token) return sendError(res, 401, 'Missing authorization token')
 
@@ -54,13 +57,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         pack_id: pack.id,
         inks: String(pack.inks),
       },
-      success_url: `${serverEnv.appUrl}/ink?purchase=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${serverEnv.appUrl}/ink?purchase=cancelled`,
+      success_url: `${getAppUrl()}/ink?purchase=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${getAppUrl()}/ink?purchase=cancelled`,
     })
 
     return res.status(200).json({ url: checkoutSession.url })
   } catch (error) {
     console.error('Failed to create ink checkout session', error)
-    return sendError(res, 500, 'Unable to start checkout')
+    const message = error instanceof Error ? error.message : 'Unable to start checkout'
+    return sendError(res, 500, message)
   }
 }

@@ -1,9 +1,13 @@
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 import { getInkPack } from '../src/lib/inkPacks'
-import { serverEnv } from './_env'
+import { requiredEnv, requiredEnvAny } from './_env'
 import { readRawBody, sendError } from './_http'
 import type { ApiRequest, ApiResponse } from './_http'
+
+type RpcClient = {
+  rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ error: Error | null }>
+}
 
 export const config = {
   api: {
@@ -11,10 +15,7 @@ export const config = {
   },
 }
 
-const stripe = new Stripe(serverEnv.stripeSecretKey)
-const supabaseAdmin = createClient(serverEnv.supabaseUrl, serverEnv.supabaseServiceRoleKey)
-
-async function fulfillCheckoutSession(session: Stripe.Checkout.Session) {
+async function fulfillCheckoutSession(session: Stripe.Checkout.Session, supabaseAdmin: RpcClient) {
   if (session.payment_status !== 'paid') return
 
   const userId = session.metadata?.user_id || session.client_reference_id
@@ -60,21 +61,29 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   let event: Stripe.Event
   try {
+    const stripe = new Stripe(requiredEnv('STRIPE_SECRET_KEY'))
     const rawBody = await readRawBody(req)
-    event = stripe.webhooks.constructEvent(rawBody, signature, serverEnv.stripeWebhookSecret)
+    event = stripe.webhooks.constructEvent(rawBody, signature, requiredEnv('STRIPE_WEBHOOK_SECRET'))
   } catch (error) {
     console.error('Invalid Stripe webhook signature', error)
-    return sendError(res, 400, 'Invalid webhook signature')
+    const message = error instanceof Error ? error.message : 'Invalid webhook signature'
+    return sendError(res, 400, message)
   }
 
   try {
+    const supabaseAdmin = createClient(
+      requiredEnvAny('SUPABASE_URL', 'VITE_SUPABASE_URL'),
+      requiredEnv('SUPABASE_SERVICE_ROLE_KEY')
+    )
+
     if (event.type === 'checkout.session.completed') {
-      await fulfillCheckoutSession(event.data.object)
+      await fulfillCheckoutSession(event.data.object, supabaseAdmin)
     }
 
     return res.status(200).json({ received: true })
   } catch (error) {
     console.error('Failed to fulfill Stripe webhook', error)
-    return sendError(res, 500, 'Webhook fulfillment failed')
+    const message = error instanceof Error ? error.message : 'Webhook fulfillment failed'
+    return sendError(res, 500, message)
   }
 }
