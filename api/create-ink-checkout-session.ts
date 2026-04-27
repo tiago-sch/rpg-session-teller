@@ -1,9 +1,9 @@
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
-import { getInkPack } from '../src/lib/inkPacks'
-import { getAppUrl, requiredEnv, requiredEnvAny } from './_env'
-import { readJsonBody, sendError } from './_http'
-import type { ApiRequest, ApiResponse } from './_http'
+import { getInkPack } from './_inkPacks.js'
+import { getAppUrl, requiredEnv, requiredEnvAny } from './_env.js'
+import { readJsonBody, sendError } from './_http.js'
+import type { ApiRequest, ApiResponse } from './_http.js'
 
 function getBearerToken(req: ApiRequest) {
   const header = req.headers.authorization

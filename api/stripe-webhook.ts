@@ -1,9 +1,9 @@
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
-import { getInkPack } from '../src/lib/inkPacks'
-import { requiredEnv, requiredEnvAny } from './_env'
-import { readRawBody, sendError } from './_http'
-import type { ApiRequest, ApiResponse } from './_http'
+import { getInkPack } from './_inkPacks.js'
+import { requiredEnv, requiredEnvAny } from './_env.js'
+import { readRawBody, sendError } from './_http.js'
+import type { ApiRequest, ApiResponse } from './_http.js'
 
 type RpcClient = {
   rpc: (fn: string, args: Record<string, unknown>) => PromiseLike<{ error: Error | null }>
