@@ -4,7 +4,7 @@ import AppHeader from '../components/AppHeader'
 
 export default function LandingPage() {
   const navigate = useNavigate()
-  const { user, loading } = useAuth()
+  const { user } = useAuth()
 
   return (
     <div
