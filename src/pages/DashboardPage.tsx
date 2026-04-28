@@ -594,7 +594,7 @@ export default function DashboardPage() {
                   onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
                   onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
                 />
-                <p className="text-xs" style={{ color: 'var(--color-border-bright)' }}>Passed to the AI when generating sessions for this campaign.</p>
+                <p className="text-xs" style={{ color: 'var(--color-parchment-muted)' }}>Passed to the AI when generating sessions for this campaign.</p>
               </Field>
               <IncludeHistoryToggle value={newIncludeHistory} onChange={setNewIncludeHistory} />
               {createError && <p className="text-xs" style={{ color: '#e07070' }}>{createError}</p>}
@@ -665,7 +665,7 @@ export default function DashboardPage() {
                   onFocus={e => (e.currentTarget.style.borderColor = 'var(--color-gold-dim)')}
                   onBlur={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
                 />
-                <p className="text-xs" style={{ color: 'var(--color-border-bright)' }}>Passed to the AI when generating sessions for this campaign.</p>
+                <p className="text-xs" style={{ color: 'var(--color-parchment-muted)' }}>Passed to the AI when generating sessions for this campaign.</p>
               </Field>
               <IncludeHistoryToggle value={editIncludeHistory} onChange={setEditIncludeHistory} />
 
@@ -830,7 +830,7 @@ function IncludeHistoryToggle({ value, onChange }: { value: boolean; onChange: (
           Include session history in generation
         </span>
       </div>
-      <p className="text-xs leading-relaxed" style={{ color: 'var(--color-border-bright)', fontFamily: 'var(--font-body)', paddingLeft: '48px' }}>
+      <p className="text-xs leading-relaxed" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-body)', paddingLeft: '48px' }}>
         When enabled, previous session summaries are passed to the AI to help it maintain continuity.
       </p>
     </div>
