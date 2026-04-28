@@ -77,6 +77,9 @@ export default function InkPage() {
     if (!usdPricing) return new Map<string, ConvertedPackPrice>()
     return new Map(usdPricing.convertedPacks.map((pack) => [pack.packId, pack]))
   }, [usdPricing])
+  const fxTimestamp = usdPricing?.asOfDate
+    ? new Date(`${usdPricing.asOfDate}T00:00:00Z`).toLocaleDateString()
+    : null
 
   const startCheckout = async (packId: string) => {
     setCheckoutError('')
@@ -150,10 +153,6 @@ export default function InkPage() {
           <StatusMessage tone="muted" text="Checkout was cancelled. No ink was purchased." />
         )}
         {checkoutError && <StatusMessage tone="error" text={checkoutError} />}
-        <StatusMessage
-          tone="muted"
-          text="USD values are estimated from BRL using a public FX rate feed and may differ from final checkout conversion."
-        />
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {INK_PACKS.map(pack => {
@@ -173,7 +172,7 @@ export default function InkPage() {
                     <h2 className="text-lg font-semibold" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}>
                       {pack.name}
                     </h2>
-                    <p className="text-sm" style={{ color: 'var(--color-parchment-muted)' }}>
+                    <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-display)' }}>
                       {pack.inks} ink
                     </p>
                   </div>
@@ -187,24 +186,49 @@ export default function InkPage() {
                   )}
                 </div>
 
-                <div className="flex items-end justify-between gap-4">
+                <div
+                  className="rounded-md p-3 flex flex-col gap-1"
+                  style={{
+                    border: '1px solid var(--color-border)',
+                    background: 'rgba(0, 0, 0, 0.15)',
+                  }}
+                >
+                  <p className="text-[0.65rem] uppercase tracking-widest" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-display)' }}>
+                    Base Price (BRL)
+                  </p>
                   <div>
                     <p className="text-2xl font-semibold" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}>
                       {formatPackPrice(pack)}
                     </p>
-                    {usdPack && (
-                      <p className="text-xs" style={{ color: 'var(--color-parchment-muted)' }}>
-                        ~{new Intl.NumberFormat('en-US', {
+                  </div>
+                </div>
+
+                <div
+                  className="rounded-md p-3 flex flex-col gap-1"
+                  style={{
+                    border: '1px solid rgba(200,145,58,0.35)',
+                    background: 'rgba(200,145,58,0.08)',
+                  }}
+                >
+                  <p className="text-[0.65rem] uppercase tracking-widest" style={{ color: 'var(--color-gold)', fontFamily: 'var(--font-display)' }}>
+                    Estimated USD
+                  </p>
+                  <p className="text-lg font-semibold tabular-nums" style={{ color: 'var(--color-parchment)' }}>
+                    {usdPack
+                      ? new Intl.NumberFormat('en-US', {
                           style: 'currency',
                           currency: 'USD',
-                        }).format(usdPack.amountMinor / 100)} estimated from BRL
-                      </p>
-                    )}
-                  </div>
-                  <p className="text-xs text-right" style={{ color: 'var(--color-parchment-muted)' }}>
-                    {formatInkRate(pack)}
+                        }).format(usdPack.amountMinor / 100)
+                      : '—'}
+                  </p>
+                  <p className="text-[0.7rem]" style={{ color: 'var(--color-parchment-muted)' }}>
+                    Calculated from BRL using public FX rate.
                   </p>
                 </div>
+
+                <p className="text-xs" style={{ color: 'var(--color-parchment-muted)' }}>
+                  {formatInkRate(pack)}
+                </p>
 
                 <button
                   onClick={() => startCheckout(pack.id)}
@@ -225,6 +249,11 @@ export default function InkPage() {
             )
           })}
         </section>
+        <p className="text-xs" style={{ color: 'var(--color-parchment-muted)' }}>
+          Estimates use {usdPricing?.provider ?? 'a public FX provider'}
+          {usdPricing?.exchangeRate ? ` at 1 BRL = ${usdPricing.exchangeRate.toFixed(4)} USD` : ''}.
+          {fxTimestamp ? ` Rate date: ${fxTimestamp}.` : ''} Final charge is set at checkout.
+        </p>
 
         <section className="flex flex-col gap-3">
           <h2
