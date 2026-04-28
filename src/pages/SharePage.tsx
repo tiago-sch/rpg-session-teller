@@ -9,6 +9,7 @@ import AppHeader from '../components/AppHeader'
 interface SessionPublicData {
   title: string
   campaign_name: string | null
+  prompt: string | null
   tldr: string | null
   generated_text: string | null
   cover_image_url: string | null
@@ -42,7 +43,7 @@ export default function SharePage() {
     queryFn: async () => {
       const { data: sessionData, error } = await supabase
         .from('sessions')
-        .select('title, campaigns(name), tldr, generated_text, cover_image_url, updated_at, user_id')
+        .select('title, campaigns(name), prompt, tldr, generated_text, cover_image_url, updated_at, user_id')
         .eq('public_id', public_id)
         .single()
 
@@ -65,6 +66,7 @@ export default function SharePage() {
       return {
         title: sd.title,
         campaign_name: sd.campaigns?.name ?? null,
+        prompt: sd.prompt,
         tldr: sd.tldr,
         generated_text: sd.generated_text,
         cover_image_url: sd.cover_image_url ?? null,
@@ -231,6 +233,14 @@ export default function SharePage() {
                 <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Chronicle</p>
                 <div className="text-base leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}>
                   {data.generated_text}
+                </div>
+              </div>
+            )}
+            {!data.tldr && !data.generated_text && data.prompt && (
+              <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Session Notes</p>
+                <div className="text-base leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}>
+                  {data.prompt}
                 </div>
               </div>
             )}

@@ -576,9 +576,13 @@ export default function SessionPage() {
         {/* ── Session view ── */}
         {session && !showEdit && (
           <div className="flex flex-col gap-8">
+            {(() => {
+              const hasGeneratedContent = !!(session.tldr || session.generated_text)
+              return (
+                <>
             {/* Action bar */}
             <div className="flex justify-end gap-2">
-              {!session.cover_image_url && (
+              {hasGeneratedContent && !session.cover_image_url && (
                 <button
                   onClick={openImageModal}
                   className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-colors cursor-pointer"
@@ -641,7 +645,7 @@ export default function SessionPage() {
                 <span className="hidden sm:inline">{copied ? 'Copied!' : 'Share'}</span>
               </button>
             </div>
-            {session.cover_image_url && (
+            {hasGeneratedContent && session.cover_image_url && (
               <div className="relative rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
                 <img
                   src={session.cover_image_url}
@@ -719,6 +723,17 @@ export default function SessionPage() {
                 </div>
               </div>
             )}
+            {!hasGeneratedContent && session.prompt && (
+              <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Session Notes</p>
+                <div className="text-base leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}>
+                  {session.prompt}
+                </div>
+              </div>
+            )}
+                </>
+              )
+            })()}
           </div>
         )}
       </main>
