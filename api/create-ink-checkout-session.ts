@@ -6,9 +6,12 @@ import { readJsonBody, sendError } from './_http.js'
 import type { ApiRequest, ApiResponse } from './_http.js'
 
 function getBearerToken(req: ApiRequest) {
-  const header = req.headers.authorization
-  if (!header?.startsWith('Bearer ')) return null
-  return header.slice('Bearer '.length)
+  const rawHeader = req.headers.authorization
+  const header = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader
+  if (typeof header !== 'string') return null
+
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim())
+  return match ? match[1] : null
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {

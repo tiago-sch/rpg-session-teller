@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import AppHeader from '../components/AppHeader'
@@ -6,7 +6,8 @@ import { useAuth } from '../context/AuthContext'
 import { useProfile } from '../hooks/useProfile'
 import { queryClient } from '../lib/queryClient'
 import { supabase } from '../lib/supabase'
-import { INK_PACKS, formatPackPrice } from '../lib/inkPacks'
+import { apiPost } from '../lib/api'
+import { INK_PACKS, formatInkRate, formatPackPrice } from '../lib/inkPacks'
 
 interface InkPurchase {
   id: string
@@ -15,6 +16,21 @@ interface InkPurchase {
   amount_total: number | null
   currency: string | null
   created_at: string
+}
+
+interface ConvertedPackPrice {
+  packId: string
+  currency: string
+  amount: number
+  amountMinor: number
+}
+
+interface InkUsdPricesResponse {
+  quoteId: string
+  sourceCurrency: string
+  targetCurrency: string
+  exchangeRate: number
+  convertedPacks: ConvertedPackPrice[]
 }
 
 export default function InkPage() {
@@ -47,6 +63,19 @@ export default function InkPage() {
     },
     enabled: !!user,
   })
+
+  const { data: usdPricing } = useQuery({
+    queryKey: ['ink-usd-pricing'],
+    queryFn: () => apiPost<InkUsdPricesResponse>('/api/get-ink-usd-prices', session, { targetCurrency: 'usd' }),
+    enabled: !!session,
+    staleTime: 1000 * 60,
+    retry: false,
+  })
+
+  const usdPriceByPack = useMemo(() => {
+    if (!usdPricing) return new Map<string, ConvertedPackPrice>()
+    return new Map(usdPricing.convertedPacks.map((pack) => [pack.packId, pack]))
+  }, [usdPricing])
 
   const startCheckout = async (packId: string) => {
     setCheckoutError('')
@@ -122,61 +151,74 @@ export default function InkPage() {
         {checkoutError && <StatusMessage tone="error" text={checkoutError} />}
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {INK_PACKS.map(pack => (
-            <article
-              key={pack.id}
-              className="rounded-lg p-5 flex flex-col gap-5"
-              style={{
-                background: pack.featured ? 'var(--color-surface-raised)' : 'var(--color-surface)',
-                border: `1px solid ${pack.featured ? 'var(--color-gold-dim)' : 'var(--color-border)'}`,
-                boxShadow: pack.featured ? '0 0 28px rgba(200,145,58,0.12)' : 'none',
-              }}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-lg font-semibold" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}>
-                    {pack.name}
-                  </h2>
-                  <p className="text-sm" style={{ color: 'var(--color-parchment-muted)' }}>
-                    {pack.inks} ink
-                  </p>
-                </div>
-                {pack.featured && (
-                  <span
-                    className="text-[0.65rem] font-semibold tracking-widest uppercase px-2 py-1 rounded"
-                    style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)', border: '1px solid var(--color-gold-dim)' }}
-                  >
-                    Popular
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-end justify-between gap-4">
-                <p className="text-2xl font-semibold" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}>
-                  {formatPackPrice(pack)}
-                </p>
-                <p className="text-xs text-right" style={{ color: 'var(--color-parchment-muted)' }}>
-                  {Math.round(pack.inks / (pack.unitAmount / 100))} ink / dollar
-                </p>
-              </div>
-
-              <button
-                onClick={() => startCheckout(pack.id)}
-                disabled={checkoutPackId !== null}
-                className="mt-auto py-2.5 rounded-lg text-sm font-semibold tracking-widest uppercase transition-all cursor-pointer disabled:opacity-40"
+          {INK_PACKS.map(pack => {
+            const usdPack = usdPriceByPack.get(pack.id)
+            return (
+              <article
+                key={pack.id}
+                className="rounded-lg p-5 flex flex-col gap-5"
                 style={{
-                  fontFamily: 'var(--font-display)',
-                  background: pack.featured
-                    ? 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)'
-                    : 'var(--color-ink-soft)',
-                  color: pack.featured ? '#0c0a14' : 'var(--color-parchment)',
-                  border: `1px solid ${pack.featured ? 'var(--color-gold-dim)' : 'var(--color-border-bright)'}`,
+                  background: pack.featured ? 'var(--color-surface-raised)' : 'var(--color-surface)',
+                  border: `1px solid ${pack.featured ? 'var(--color-gold-dim)' : 'var(--color-border)'}`,
+                  boxShadow: pack.featured ? '0 0 28px rgba(200,145,58,0.12)' : 'none',
                 }}
               >
-                {checkoutPackId === pack.id ? 'Opening Stripe...' : 'Buy Ink'}
-              </button>
-            </article>
-          ))}
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}>
+                      {pack.name}
+                    </h2>
+                    <p className="text-sm" style={{ color: 'var(--color-parchment-muted)' }}>
+                      {pack.inks} ink
+                    </p>
+                  </div>
+                  {pack.featured && (
+                    <span
+                      className="text-[0.65rem] font-semibold tracking-widest uppercase px-2 py-1 rounded"
+                      style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)', border: '1px solid var(--color-gold-dim)' }}
+                    >
+                      Popular
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-end justify-between gap-4">
+                  <div>
+                    <p className="text-2xl font-semibold" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment)' }}>
+                      {formatPackPrice(pack)}
+                    </p>
+                    {usdPack && (
+                      <p className="text-xs" style={{ color: 'var(--color-parchment-muted)' }}>
+                        ~{new Intl.NumberFormat('en-US', {
+                          style: 'currency',
+                          currency: 'USD',
+                        }).format(usdPack.amountMinor / 100)}
+                      </p>
+                    )}
+                  </div>
+                  <p className="text-xs text-right" style={{ color: 'var(--color-parchment-muted)' }}>
+                    {formatInkRate(pack)}
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => startCheckout(pack.id)}
+                  disabled={checkoutPackId !== null}
+                  className="mt-auto py-2.5 rounded-lg text-sm font-semibold tracking-widest uppercase transition-all cursor-pointer disabled:opacity-40"
+                  style={{
+                    fontFamily: 'var(--font-display)',
+                    background: pack.featured
+                      ? 'linear-gradient(135deg, var(--color-gold-dim) 0%, var(--color-gold) 100%)'
+                      : 'var(--color-ink-soft)',
+                    color: pack.featured ? '#0c0a14' : 'var(--color-parchment)',
+                    border: `1px solid ${pack.featured ? 'var(--color-gold-dim)' : 'var(--color-border-bright)'}`,
+                  }}
+                >
+                  {checkoutPackId === pack.id ? 'Opening Stripe...' : 'Buy Ink'}
+                </button>
+              </article>
+            )
+          })}
         </section>
 
         <section className="flex flex-col gap-3">
