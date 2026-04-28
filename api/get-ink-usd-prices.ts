@@ -63,11 +63,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
 
     const stripeSecret = requiredEnv('STRIPE_SECRET_KEY')
-    const payload = new URLSearchParams({
-      to_currency: targetCurrency,
-      from_currencies: sourceCurrency,
-      lock_duration: 'none',
-    })
+    const payload = new URLSearchParams()
+    payload.set('to_currency', targetCurrency)
+    payload.append('from_currencies[]', sourceCurrency)
+    payload.set('lock_duration', 'none')
 
     const stripeResponse = await fetch('https://api.stripe.com/v1/fx_quotes', {
       method: 'POST',
