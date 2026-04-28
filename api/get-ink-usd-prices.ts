@@ -1,23 +1,14 @@
 import { INK_PACKS } from './_inkPacks.js'
 import { createClient } from '@supabase/supabase-js'
-import { requiredEnv, requiredEnvAny } from './_env.js'
+import { requiredEnvAny } from './_env.js'
 import { readJsonBody, sendError } from './_http.js'
 import type { ApiRequest, ApiResponse } from './_http.js'
 
-interface FxQuoteRate {
-  exchange_rate?: number
-  base_rate?: number
-}
-
-interface FxQuoteResponse {
-  id: string
-  rates?: Record<string, FxQuoteRate>
-}
-
-interface FxQuoteErrorResponse {
-  error?: {
-    message?: string
-  }
+interface PublicFxResponse {
+  amount?: number
+  base?: string
+  date?: string
+  rates?: Record<string, number>
 }
 
 function getBearerToken(req: ApiRequest) {
@@ -62,39 +53,23 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return sendError(res, 500, 'Ink pack currency is not configured')
     }
 
-    const stripeSecret = requiredEnv('STRIPE_SECRET_KEY')
-    const payload = new URLSearchParams()
-    payload.set('to_currency', targetCurrency)
-    payload.append('from_currencies[]', sourceCurrency)
-    payload.set('lock_duration', 'none')
-
-    const stripeResponse = await fetch('https://api.stripe.com/v1/fx_quotes', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${stripeSecret}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Stripe-Version': '2025-07-30.preview',
-      },
-      body: payload,
-    })
-
-    if (!stripeResponse.ok) {
-      const errorBody = (await stripeResponse.json().catch(() => null)) as FxQuoteErrorResponse | null
-      const message = errorBody?.error?.message ?? 'Unable to fetch FX quote from Stripe'
-      return sendError(res, stripeResponse.status, message)
+    const fxResponse = await fetch(
+      `https://api.frankfurter.app/latest?from=${sourceCurrency.toUpperCase()}&to=${targetCurrency.toUpperCase()}`
+    )
+    if (!fxResponse.ok) {
+      return sendError(res, fxResponse.status, 'Unable to fetch FX rate')
     }
 
-    const quote = (await stripeResponse.json()) as FxQuoteResponse
-    const rateInfo = quote.rates?.[sourceCurrency]
-    const exchangeRate = rateInfo?.exchange_rate ?? rateInfo?.base_rate
+    const quote = (await fxResponse.json()) as PublicFxResponse
+    const exchangeRate = quote.rates?.[targetCurrency.toUpperCase()]
 
     if (!exchangeRate || exchangeRate <= 0) {
-      return sendError(res, 502, 'Stripe returned an invalid FX exchange rate')
+      return sendError(res, 502, 'FX provider returned an invalid exchange rate')
     }
 
     const convertedPacks = INK_PACKS.map((pack) => {
       const sourceAmount = pack.unitAmount / 100
-      const usdAmount = sourceAmount / exchangeRate
+      const usdAmount = sourceAmount * exchangeRate
       return {
         packId: pack.id,
         currency: targetCurrency,
@@ -104,15 +79,16 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     })
 
     return res.status(200).json({
-      quoteId: quote.id,
+      provider: 'frankfurter.app',
+      asOfDate: quote.date ?? null,
       sourceCurrency,
       targetCurrency,
       exchangeRate,
       convertedPacks,
     })
   } catch (error) {
-    console.error('Failed to fetch ink FX quote', error)
-    const message = error instanceof Error ? error.message : 'Unable to fetch FX quote'
+    console.error('Failed to fetch public FX rate', error)
+    const message = error instanceof Error ? error.message : 'Unable to fetch FX rate'
     return sendError(res, 500, message)
   }
 }

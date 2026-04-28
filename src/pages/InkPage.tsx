@@ -26,7 +26,8 @@ interface ConvertedPackPrice {
 }
 
 interface InkUsdPricesResponse {
-  quoteId: string
+  provider: string
+  asOfDate: string | null
   sourceCurrency: string
   targetCurrency: string
   exchangeRate: number
@@ -149,6 +150,10 @@ export default function InkPage() {
           <StatusMessage tone="muted" text="Checkout was cancelled. No ink was purchased." />
         )}
         {checkoutError && <StatusMessage tone="error" text={checkoutError} />}
+        <StatusMessage
+          tone="muted"
+          text="USD values are estimated from BRL using a public FX rate feed and may differ from final checkout conversion."
+        />
 
         <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {INK_PACKS.map(pack => {
@@ -192,7 +197,7 @@ export default function InkPage() {
                         ~{new Intl.NumberFormat('en-US', {
                           style: 'currency',
                           currency: 'USD',
-                        }).format(usdPack.amountMinor / 100)}
+                        }).format(usdPack.amountMinor / 100)} estimated from BRL
                       </p>
                     )}
                   </div>
