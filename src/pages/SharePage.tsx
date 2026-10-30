@@ -5,8 +5,12 @@ import { queryClient } from '../lib/queryClient'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import AppHeader from '../components/AppHeader'
+import { EpisodeNav, PreviouslyOn } from '../components/SessionEpisode'
+import { useCampaignEpisodes } from '../hooks/useCampaignEpisodes'
 
 interface SessionPublicData {
+  id: number
+  campaign_id: number | null
   title: string
   campaign_name: string | null
   prompt: string | null
@@ -43,7 +47,7 @@ export default function SharePage() {
     queryFn: async () => {
       const { data: sessionData, error } = await supabase
         .from('sessions')
-        .select('title, campaigns(name), prompt, tldr, generated_text, cover_image_url, updated_at, user_id')
+        .select('id, campaign_id, title, campaigns(name), prompt, tldr, generated_text, cover_image_url, updated_at, user_id')
         .eq('public_id', public_id)
         .single()
 
@@ -64,6 +68,8 @@ export default function SharePage() {
       ])
 
       return {
+        id: sd.id,
+        campaign_id: sd.campaign_id,
         title: sd.title,
         campaign_name: sd.campaigns?.name ?? null,
         prompt: sd.prompt,
@@ -122,6 +128,7 @@ export default function SharePage() {
   }
 
   const saving = saveMutation.isPending || unsaveMutation.isPending
+  const episodes = useCampaignEpisodes(data?.id, data?.campaign_id)
 
   return (
     <div
@@ -188,6 +195,7 @@ export default function SharePage() {
               {data.campaign_name && (
                 <p className="text-xs font-semibold tracking-widest uppercase mb-2" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>
                   {data.campaign_name}
+                  {episodes.number && ` · Session ${episodes.number}`}
                 </p>
               )}
               <h1
@@ -221,6 +229,8 @@ export default function SharePage() {
               </div>
             )}
 
+            <PreviouslyOn sessionId={data.id} />
+
             {data.tldr && (
               <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                 <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Summary</p>
@@ -244,6 +254,8 @@ export default function SharePage() {
                 </div>
               </div>
             )}
+
+            <EpisodeNav previous={episodes.previous} next={episodes.next} linkTo={id => `/s/${id}`} />
           </div>
         )}
       </main>

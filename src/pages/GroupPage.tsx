@@ -95,7 +95,8 @@ export default function GroupPage() {
       return {
         ...gData,
         creatorName: profileData?.display_name ?? null,
-        sessions: (gsData as unknown as GroupSession[]) ?? [],
+        // Deleted sessions come back without their session row.
+        sessions: ((gsData as unknown as GroupSession[]) ?? []).filter(gs => gs.sessions),
         savedId: (savedResult as { data: { id: number } | null }).data?.id ?? null,
       }
     },

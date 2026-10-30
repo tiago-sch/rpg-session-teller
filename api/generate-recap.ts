@@ -29,15 +29,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     const [{ data: sessionRows }, { data: chars }] = await Promise.all([
       supabase
         .from('sessions')
-        .select('title, tldr, generated_text')
+        .select('id, title, tldr, generated_text')
         .eq('campaign_id', campaign.id)
         .not('tldr', 'is', null)
-        .order('created_at', { ascending: false })
+        .order('position', { ascending: false })
         .limit(sessionCount),
       supabase.from('campaign_characters').select('name, notes').eq('campaign_id', campaign.id).order('sort_order'),
     ])
 
-    const sessions = ((sessionRows ?? []) as { title: string; tldr: string; generated_text: string | null }[]).reverse()
+    const sessions = ((sessionRows ?? []) as { id: number; title: string; tldr: string; generated_text: string | null }[]).reverse()
     if (sessions.length === 0) return sendError(res, 400, 'This campaign has no chronicles to recap yet.')
 
     await ensureInkBalance(supabase, user.id, RECAP_COST)
@@ -50,15 +50,22 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       { notes: campaign.notes, characters: (chars ?? []) as { name: string; notes?: string | null }[] },
     )
     const newBalance = await spendInk(supabase, RECAP_COST)
-    const generatedAt = new Date().toISOString()
 
-    const { error: saveError } = await supabase
-      .from('campaigns')
-      .update({ recap, recap_generated_at: generatedAt })
-      .eq('id', campaign.id)
-    if (saveError) throw saveError
+    const { data: saved, error: saveError } = await supabase
+      .from('campaign_recaps')
+      .insert({
+        campaign_id: campaign.id,
+        user_id: user.id,
+        recap,
+        tone: body.toneId,
+        session_count: sessions.length,
+        last_session_id: sessions[sessions.length - 1].id,
+      })
+      .select('id, recap, tone, session_count, last_session_id, session_id, created_at')
+      .single()
+    if (saveError || !saved) throw saveError ?? new Error('Failed to save recap.')
 
-    return res.status(200).json({ recap, generatedAt, inks: newBalance })
+    return res.status(200).json({ recap: saved, inks: newBalance })
   } catch (error) {
     console.error('Failed to generate recap', error)
     return sendError(res, 500, error instanceof Error ? error.message : 'Recap generation failed')

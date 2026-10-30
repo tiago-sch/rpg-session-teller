@@ -11,15 +11,27 @@ import InkCost from './InkCost'
 const RECAP_COST = 1
 const SESSION_COUNTS = [1, 3, 5, 10]
 
-interface SavedRecap {
-  recap: string | null
-  recap_generated_at: string | null
+export interface Recap {
+  id: number
+  recap: string
+  tone: string | null
+  session_count: number
+  last_session_id: number | null
+  session_id: number | null
+  created_at: string
 }
 
-export default function CampaignRecapModal({ campaignId, campaignName, sessionCount, onClose }: {
+export interface RecapSessionOption {
+  id: number
+  title: string
+}
+
+export default function CampaignRecapModal({ campaignId, campaignName, sessionCount, sessions, onClose }: {
   campaignId: number
   campaignName: string
   sessionCount: number
+  // The campaign's sessions in order, for choosing which one a recap introduces.
+  sessions: RecapSessionOption[]
   onClose: () => void
 }) {
   const { user, session } = useAuth()
@@ -28,25 +40,26 @@ export default function CampaignRecapModal({ campaignId, campaignName, sessionCo
   const [toneId, setToneId] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
-  const [copied, setCopied] = useState(false)
-  const [speaking, setSpeaking] = useState(false)
+  const [speakingId, setSpeakingId] = useState<number | null>(null)
+  const [showEarlier, setShowEarlier] = useState(false)
 
-  const queryKey = ['campaign-recap', campaignId]
-  const { data: saved, isLoading } = useQuery<SavedRecap | null>({
+  const queryKey = ['campaign-recaps', campaignId]
+  const { data: recaps = [], isLoading } = useQuery<Recap[]>({
     queryKey,
     queryFn: async () => {
-      const { data } = await supabase
-        .from('campaigns')
-        .select('recap, recap_generated_at')
-        .eq('id', campaignId)
-        .single()
-      return (data as SavedRecap | null) ?? null
+      const { data, error } = await supabase
+        .from('campaign_recaps')
+        .select('id, recap, tone, session_count, last_session_id, session_id, created_at')
+        .eq('campaign_id', campaignId)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data as Recap[]) ?? []
     },
   })
 
   useEffect(() => () => window.speechSynthesis?.cancel(), [])
 
-  const recap = saved?.recap ?? null
+  const [latest, ...earlier] = recaps
   const notEnoughInk = profile !== null && profile.inks < RECAP_COST
   const counts = SESSION_COUNTS.filter(n => n < sessionCount)
 
@@ -54,14 +67,14 @@ export default function CampaignRecapModal({ campaignId, campaignName, sessionCo
     setError('')
     setGenerating(true)
     window.speechSynthesis?.cancel()
-    setSpeaking(false)
+    setSpeakingId(null)
     try {
-      const result = await apiPost<{ recap: string; generatedAt: string; inks: number }>('/api/generate-recap', session, {
+      const result = await apiPost<{ recap: Recap; inks: number }>('/api/generate-recap', session, {
         campaignId,
         sessionCount: count,
         toneId,
       })
-      queryClient.setQueryData(queryKey, { recap: result.recap, recap_generated_at: result.generatedAt })
+      queryClient.setQueryData(queryKey, (old: Recap[] | undefined) => [result.recap, ...(old ?? [])])
       queryClient.setQueryData(['profile', user?.id], (old: Profile | null) =>
         old ? { ...old, inks: result.inks } : old
       )
@@ -72,27 +85,52 @@ export default function CampaignRecapModal({ campaignId, campaignName, sessionCo
     }
   }
 
-  const handleCopy = async () => {
-    if (!recap) return
-    await navigator.clipboard.writeText(recap)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  const handleSpeak = () => {
-    if (!recap || !window.speechSynthesis) return
-    if (speaking) {
-      window.speechSynthesis.cancel()
-      setSpeaking(false)
+  const handleSpeak = (recap: Recap) => {
+    if (!window.speechSynthesis) return
+    window.speechSynthesis.cancel()
+    if (speakingId === recap.id) {
+      setSpeakingId(null)
       return
     }
-    const utterance = new SpeechSynthesisUtterance(recap)
+    const utterance = new SpeechSynthesisUtterance(recap.recap)
     utterance.rate = 0.95
-    utterance.onend = () => setSpeaking(false)
-    utterance.onerror = () => setSpeaking(false)
+    utterance.onend = () => setSpeakingId(id => (id === recap.id ? null : id))
+    utterance.onerror = () => setSpeakingId(id => (id === recap.id ? null : id))
     window.speechSynthesis.speak(utterance)
-    setSpeaking(true)
+    setSpeakingId(recap.id)
   }
+
+  const updateRecap = async (id: number, patch: Partial<Recap>) => {
+    setError('')
+    queryClient.setQueryData(queryKey, (old: Recap[] | undefined) => old?.map(r => (r.id === id ? { ...r, ...patch } : r)))
+    const { error } = await supabase.from('campaign_recaps').update(patch).eq('id', id)
+    if (error) setError('Failed to update the recap.')
+    queryClient.invalidateQueries({ queryKey })
+    queryClient.invalidateQueries({ queryKey: ['session-recap'] })
+  }
+
+  const deleteRecap = async (id: number) => {
+    if (!window.confirm('Delete this recap?')) return
+    setError('')
+    if (speakingId === id) {
+      window.speechSynthesis?.cancel()
+      setSpeakingId(null)
+    }
+    queryClient.setQueryData(queryKey, (old: Recap[] | undefined) => old?.filter(r => r.id !== id))
+    const { error } = await supabase.from('campaign_recaps').delete().eq('id', id)
+    if (error) setError('Failed to delete the recap.')
+    queryClient.invalidateQueries({ queryKey })
+    queryClient.invalidateQueries({ queryKey: ['session-recap'] })
+  }
+
+  const cardProps = (recap: Recap) => ({
+    recap,
+    sessions,
+    speaking: speakingId === recap.id,
+    onSpeak: () => handleSpeak(recap),
+    onLink: (sessionId: number | null) => updateRecap(recap.id, { session_id: sessionId }),
+    onDelete: () => deleteRecap(recap.id),
+  })
 
   return (
     <div
@@ -121,20 +159,22 @@ export default function CampaignRecapModal({ campaignId, campaignName, sessionCo
                 <path d="M12 2a10 10 0 0 1 10 10" stroke="var(--color-gold)" strokeWidth="3" strokeLinecap="round" />
               </svg>
             </div>
-          ) : recap ? (
-            <div className="flex flex-col gap-3">
-              <p className="whitespace-pre-line leading-relaxed" style={{ color: 'var(--color-parchment)', fontSize: '1.125rem' }}>{recap}</p>
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <p className="text-xs" style={{ color: 'var(--color-mist)' }}>
-                  {saved?.recap_generated_at && `Written ${new Date(saved.recap_generated_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`}
-                </p>
-                <div className="flex gap-2">
-                  {'speechSynthesis' in window && (
-                    <SmallButton onClick={handleSpeak}>{speaking ? 'Stop' : 'Read aloud'}</SmallButton>
-                  )}
-                  <SmallButton onClick={handleCopy}>{copied ? 'Copied' : 'Copy'}</SmallButton>
+          ) : latest ? (
+            <div className="flex flex-col gap-4">
+              <RecapCard {...cardProps(latest)} />
+              {earlier.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowEarlier(v => !v)}
+                    className="self-start text-xs font-semibold tracking-widest uppercase cursor-pointer transition-opacity hover:opacity-80"
+                    style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}
+                  >
+                    {showEarlier ? '▾' : '▸'} Earlier recaps ({earlier.length})
+                  </button>
+                  {showEarlier && earlier.map(recap => <RecapCard key={recap.id} {...cardProps(recap)} compact />)}
                 </div>
-              </div>
+              )}
             </div>
           ) : (
             <p className="text-sm" style={{ color: 'var(--color-parchment-muted)' }}>
@@ -183,11 +223,76 @@ export default function CampaignRecapModal({ campaignId, campaignName, sessionCo
                   border: '1px solid var(--color-gold-dim)',
                 }}
               >
-                {generating ? 'Writing…' : recap ? 'Write a new recap' : 'Write recap'}
+                {generating ? 'Writing…' : latest ? 'Write a new recap' : 'Write recap'}
               </button>
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function RecapCard({ recap, sessions, speaking, compact, onSpeak, onLink, onDelete }: {
+  recap: Recap
+  sessions: RecapSessionOption[]
+  speaking: boolean
+  compact?: boolean
+  onSpeak: () => void
+  onLink: (sessionId: number | null) => void
+  onDelete: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+  const [expanded, setExpanded] = useState(!compact)
+  const tone = TONES.find(t => t.id === recap.tone)
+  const linkedMissing = recap.session_id !== null && !sessions.some(s => s.id === recap.session_id)
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(recap.recap)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div
+      className="flex flex-col gap-3 rounded-xl px-4 py-4"
+      style={{ background: 'var(--color-ink-soft)', border: '1px solid var(--color-border)' }}
+    >
+      <p
+        className={`whitespace-pre-line leading-relaxed ${expanded ? '' : 'line-clamp-3 cursor-pointer'}`}
+        style={{ color: 'var(--color-parchment)', fontSize: compact ? '1rem' : '1.125rem' }}
+        onClick={() => !expanded && setExpanded(true)}
+      >
+        {recap.recap}
+      </p>
+      <p className="text-xs" style={{ color: 'var(--color-mist)' }}>
+        {new Date(recap.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+        {recap.session_count > 0 && ` · covers ${recap.session_count} session${recap.session_count === 1 ? '' : 's'}`}
+        {tone && ` · ${tone.label}`}
+      </p>
+      <label className="flex flex-col gap-1.5">
+        <span className="text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>
+          Shown before
+        </span>
+        <select
+          value={recap.session_id ?? ''}
+          onChange={e => onLink(e.target.value ? Number(e.target.value) : null)}
+          className="w-full rounded-lg px-3 py-2 text-sm cursor-pointer"
+          style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-parchment)' }}
+        >
+          <option value="">Not linked — attaches to the next session you write</option>
+          {linkedMissing && <option value={recap.session_id!}>A deleted session, or one in another campaign</option>}
+          {sessions.map((s, i) => (
+            <option key={s.id} value={s.id}>#{i + 1} {s.title}</option>
+          ))}
+        </select>
+      </label>
+      <div className="flex justify-end gap-2 flex-wrap">
+        {'speechSynthesis' in window && (
+          <SmallButton onClick={onSpeak}>{speaking ? 'Stop' : 'Read aloud'}</SmallButton>
+        )}
+        <SmallButton onClick={handleCopy}>{copied ? 'Copied' : 'Copy'}</SmallButton>
+        <SmallButton onClick={onDelete}>Delete</SmallButton>
       </div>
     </div>
   )

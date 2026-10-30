@@ -10,6 +10,8 @@ import { TONES } from '../lib/tones'
 import CampaignSelect from '../components/CampaignSelect'
 import AppHeader from '../components/AppHeader'
 import InkCost from '../components/InkCost'
+import { EpisodeNav, PreviouslyOn } from '../components/SessionEpisode'
+import { useCampaignEpisodes } from '../hooks/useCampaignEpisodes'
 import { useDraft, formatDraftAge, type DraftData } from '../hooks/useDraft'
 
 interface Session {
@@ -108,6 +110,24 @@ export default function SessionPage() {
   })
 
   const { draft, saveDraft, clearDraft } = useDraft(user, session?.id ?? undefined)
+  const episodes = useCampaignEpisodes(session?.id, session?.campaign_id)
+  const [deleting, setDeleting] = useState(false)
+
+  const handleDelete = async () => {
+    if (!session) return
+    if (!window.confirm(`Delete "${session.title}"? You can restore it from Recently deleted on the dashboard.`)) return
+    setDeleting(true)
+    const { error } = await supabase.rpc('delete_session', { p_session_id: session.id })
+    if (error) {
+      setDeleting(false)
+      window.alert('Failed to delete the session.')
+      return
+    }
+    queryClient.invalidateQueries({ queryKey: ['sessions', user?.id] })
+    queryClient.invalidateQueries({ queryKey: ['campaign-episodes'] })
+    queryClient.invalidateQueries({ queryKey: ['deleted-sessions'] })
+    navigate('/dashboard')
+  }
 
   // Autosave edit draft while editing
   useEffect(() => {
@@ -137,6 +157,7 @@ export default function SessionPage() {
       queryClient.invalidateQueries({ queryKey: sessionQueryKey })
       queryClient.invalidateQueries({ queryKey: ['sessions', user?.id] })
       queryClient.invalidateQueries({ queryKey: ['session_public', public_id] })
+      queryClient.invalidateQueries({ queryKey: ['campaign-episodes'] })
       setShowEdit(false)
     },
     onError: (err) => {
@@ -645,6 +666,20 @@ export default function SessionPage() {
                 </svg>
                 <span className="hidden sm:inline">{copied ? 'Copied!' : 'Share'}</span>
               </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                title="Delete session"
+                className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-semibold tracking-widest uppercase transition-colors cursor-pointer disabled:opacity-50"
+                style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-parchment-muted)' }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = '#8b3a2a')}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                  <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                <span className="hidden sm:inline">{deleting ? 'Deleting…' : 'Delete'}</span>
+              </button>
             </div>
             {hasGeneratedContent && session.cover_image_url && (
               <div className="relative rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
@@ -687,6 +722,7 @@ export default function SessionPage() {
               {session.campaigns?.name && (
                 <p className="text-xs font-semibold tracking-widest uppercase mb-2" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>
                   {session.campaigns.name}
+                  {episodes.number && ` · Session ${episodes.number}`}
                 </p>
               )}
               <h1
@@ -708,6 +744,8 @@ export default function SessionPage() {
               </svg>
               <div className="flex-1 h-px" style={{ background: 'var(--color-border)' }} />
             </div>
+
+            <PreviouslyOn sessionId={session.id} />
 
             {session.tldr && (
               <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
@@ -732,6 +770,8 @@ export default function SessionPage() {
                 </div>
               </div>
             )}
+
+            <EpisodeNav previous={episodes.previous} next={episodes.next} linkTo={id => `/session/${id}`} />
                 </>
               )
             })()}

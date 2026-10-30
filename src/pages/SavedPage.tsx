@@ -59,7 +59,8 @@ export default function SavedPage() {
       }) => [s.public_id, s]))
       const profileMap = new Map((profilesData ?? []).map((p: { id: string; display_name: string }) => [p.id, p.display_name]))
 
-      return savedData.map((saved: { id: number; session_public_id: string; note: string | null; saved_at: string }) => {
+      // Skip sessions their author has deleted.
+      return savedData.filter((saved: { session_public_id: string }) => sessionMap.has(saved.session_public_id)).map((saved: { id: number; session_public_id: string; note: string | null; saved_at: string }) => {
         const session = sessionMap.get(saved.session_public_id)
         return {
           ...saved,

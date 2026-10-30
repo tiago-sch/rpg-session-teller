@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import AppHeader from '../components/AppHeader'
 import CampaignRecapModal from '../components/CampaignRecapModal'
+import DeletedSessionsModal from '../components/DeletedSessionsModal'
 
 interface Campaign {
   id: number
@@ -16,6 +17,7 @@ interface Campaign {
 }
 
 interface Session {
+  id: number
   public_id: string
   title: string
   campaign_id: number | null
@@ -45,6 +47,15 @@ export default function DashboardPage() {
   const [selectedCampaign, setSelectedCampaign] = useState<number | 'all' | 'none'>('all')
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [showRecap, setShowRecap] = useState(false)
+  const [reordering, setReordering] = useState(false)
+  const [showDeleted, setShowDeleted] = useState(false)
+  const [reorderError, setReorderError] = useState('')
+
+  const selectCampaign = (campaign: number | 'all' | 'none') => {
+    setSelectedCampaign(campaign)
+    setReordering(false)
+    setReorderError('')
+  }
 
   // ── Create modal ──
   const [showModal, setShowModal] = useState(false)
@@ -130,18 +141,40 @@ export default function DashboardPage() {
     queryFn: async () => {
       let query = supabase
         .from('sessions')
-        .select('public_id, title, campaign_id, campaigns(name), tldr, created_at, updated_at')
+        .select('id, public_id, title, campaign_id, campaigns(name), tldr, created_at, updated_at')
         .eq('user_id', user!.id)
-        .order('created_at', { ascending: false })
 
-      if (selectedCampaign === 'none') query = query.is('campaign_id', null)
-      else if (selectedCampaign !== 'all') query = query.eq('campaign_id', selectedCampaign)
+      // Inside a campaign, sessions follow the campaign's own order.
+      if (selectedCampaign === 'none') query = query.is('campaign_id', null).order('created_at', { ascending: false })
+      else if (selectedCampaign !== 'all') query = query.eq('campaign_id', selectedCampaign).order('position', { ascending: true })
+      else query = query.order('created_at', { ascending: false })
 
       const { data } = await query
       return (data as unknown as Session[]) ?? []
     },
     enabled: !!user,
   })
+
+  const moveSession = async (index: number, direction: -1 | 1) => {
+    if (typeof selectedCampaign !== 'number') return
+    const target = index + direction
+    if (target < 0 || target >= sessions.length) return
+
+    const next = [...sessions]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    const key = ['sessions', user?.id, selectedCampaign]
+    queryClient.setQueryData(key, next)
+    setReorderError('')
+
+    const { error } = await supabase.rpc('reorder_campaign_sessions', {
+      p_campaign_id: selectedCampaign,
+      p_session_ids: next.map(s => s.id),
+    })
+    if (error) {
+      setReorderError('Failed to save the new order.')
+      queryClient.invalidateQueries({ queryKey: key })
+    }
+  }
 
   const createMutation = useMutation({
     mutationFn: async ({ name, description, notes, include_history }: {
@@ -236,6 +269,8 @@ export default function DashboardPage() {
   const isLoading = loadingSessions || loadingCampaigns
   const selectedCampaignData = typeof selectedCampaign === 'number' ? campaigns.find(c => c.id === selectedCampaign) : undefined
   const recapSessionCount = selectedCampaignData ? sessions.filter(s => s.tldr).length : 0
+  const inCampaign = !!selectedCampaignData
+  const showReorder = inCampaign && reordering
 
   return (
     <div
@@ -246,12 +281,12 @@ export default function DashboardPage() {
 
       {/* Mobile campaign chips */}
       <div className="md:hidden flex items-center gap-2 px-4 py-3 overflow-x-auto shrink-0" style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-ink-soft)' }}>
-        <Chip label="All" active={selectedCampaign === 'all'} onClick={() => setSelectedCampaign('all')} />
+        <Chip label="All" active={selectedCampaign === 'all'} onClick={() => selectCampaign('all')} />
         {campaigns.map(c => (
-          <Chip key={c.id} label={c.name} active={selectedCampaign === c.id} onClick={() => setSelectedCampaign(c.id)} />
+          <Chip key={c.id} label={c.name} active={selectedCampaign === c.id} onClick={() => selectCampaign(c.id)} />
         ))}
         {campaigns.length > 0 && (
-          <Chip label="Uncategorized" active={selectedCampaign === 'none'} onClick={() => setSelectedCampaign('none')} muted />
+          <Chip label="Uncategorized" active={selectedCampaign === 'none'} onClick={() => selectCampaign('none')} muted />
         )}
         <button
           onClick={() => { setShowModal(true); setCreateError('') }}
@@ -259,6 +294,13 @@ export default function DashboardPage() {
           style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)', border: '1px dashed var(--color-gold-dim)', whiteSpace: 'nowrap' }}
         >
           + Campaign
+        </button>
+        <button
+          onClick={() => setShowDeleted(true)}
+          className="shrink-0 px-3 py-1 rounded-full text-xs font-semibold tracking-widest uppercase cursor-pointer"
+          style={{ fontFamily: 'var(--font-display)', color: 'var(--color-mist)', border: '1px solid var(--color-border)', whiteSpace: 'nowrap' }}
+        >
+          Deleted
         </button>
       </div>
 
@@ -273,12 +315,12 @@ export default function DashboardPage() {
           <p className="px-3 pb-2 text-xs font-semibold tracking-widest uppercase" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)' }}>
             Campaigns
           </p>
-          <SidebarItem label="All Sessions" active={selectedCampaign === 'all'} onClick={() => setSelectedCampaign('all')} />
+          <SidebarItem label="All Sessions" active={selectedCampaign === 'all'} onClick={() => selectCampaign('all')} />
           {campaigns.map(c => (
-            <SidebarItem key={c.id} label={c.name} active={selectedCampaign === c.id} onClick={() => setSelectedCampaign(c.id)} onEdit={() => openEdit(c)} />
+            <SidebarItem key={c.id} label={c.name} active={selectedCampaign === c.id} onClick={() => selectCampaign(c.id)} onEdit={() => openEdit(c)} />
           ))}
           {campaigns.length > 0 && (
-            <SidebarItem label="Uncategorized" active={selectedCampaign === 'none'} onClick={() => setSelectedCampaign('none')} muted />
+            <SidebarItem label="Uncategorized" active={selectedCampaign === 'none'} onClick={() => selectCampaign('none')} muted />
           )}
           <div className="mt-auto pt-4">
             <button
@@ -289,6 +331,13 @@ export default function DashboardPage() {
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
               + New Campaign
+            </button>
+            <button
+              onClick={() => setShowDeleted(true)}
+              className="w-full mt-2 px-3 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase text-left transition-opacity cursor-pointer hover:opacity-80"
+              style={{ fontFamily: 'var(--font-display)', color: 'var(--color-mist)' }}
+            >
+              Recently deleted
             </button>
           </div>
         </aside>
@@ -309,6 +358,21 @@ export default function DashboardPage() {
                 : (campaigns.find(c => c.id === selectedCampaign)?.name ?? '')}
             </h1>
             <div className="flex items-center gap-2 shrink-0">
+              {inCampaign && sessions.length > 1 && (
+                <button
+                  onClick={() => setReordering(r => !r)}
+                  className="px-3 sm:px-4 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase transition-opacity cursor-pointer hover:opacity-80"
+                  style={{
+                    fontFamily: 'var(--font-display)',
+                    background: reordering ? 'var(--color-gold-dim)' : 'var(--color-surface-raised)',
+                    border: `1px solid ${reordering ? 'var(--color-gold)' : 'var(--color-border)'}`,
+                    color: reordering ? 'var(--color-parchment)' : 'var(--color-parchment-muted)',
+                  }}
+                  title="Change the order of this campaign's sessions"
+                >
+                  {reordering ? 'Done' : 'Reorder'}
+                </button>
+              )}
               {typeof selectedCampaign === 'number' && recapSessionCount > 0 && (
                 <button
                   onClick={() => setShowRecap(true)}
@@ -360,6 +424,10 @@ export default function DashboardPage() {
             })()
           )}
 
+          {reorderError && (
+            <p className="text-sm" style={{ color: '#e07070' }}>{reorderError}</p>
+          )}
+
           {isLoading && (
             <div className="flex justify-center py-16">
               <svg className="animate-spin" width="24" height="24" viewBox="0 0 24 24" fill="none">
@@ -387,20 +455,26 @@ export default function DashboardPage() {
           {/* Mobile: session cards */}
           {!isLoading && sessions.length > 0 && (
             <div className="md:hidden flex flex-col gap-3">
-              {sessions.map(session => (
+              {sessions.map((session, index) => (
                 <div
                   key={session.public_id}
                   className="rounded-xl px-4 py-4 flex flex-col gap-2"
                   style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <button
-                      onClick={() => navigate(`/session/${session.public_id}`)}
-                      className="text-left font-semibold leading-snug hover:underline cursor-pointer"
-                      style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold-light)' }}
-                    >
-                      {session.title}
-                    </button>
+                    <div className="flex items-start gap-2 min-w-0">
+                      {inCampaign && <SessionNumber n={index + 1} />}
+                      <button
+                        onClick={() => navigate(`/session/${session.public_id}`)}
+                        className="text-left font-semibold leading-snug hover:underline cursor-pointer"
+                        style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold-light)' }}
+                      >
+                        {session.title}
+                      </button>
+                    </div>
+                    {showReorder ? (
+                      <ReorderControls index={index} total={sessions.length} onMove={dir => moveSession(index, dir)} />
+                    ) : (
                     <div className="flex items-center gap-2 shrink-0 pt-0.5">
                       <button
                         title="Copy share link"
@@ -437,6 +511,7 @@ export default function DashboardPage() {
                         </svg>
                       </a>
                     </div>
+                    )}
                   </div>
                   {selectedCampaign === 'all' && session.campaigns?.name && (
                     <p className="text-xs" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)', opacity: 0.8 }}>{session.campaigns.name}</p>
@@ -480,13 +555,16 @@ export default function DashboardPage() {
                       }}
                     >
                       <td className="px-5 py-4 align-top w-44">
-                        <button
-                          onClick={() => navigate(`/session/${session.public_id}`)}
-                          className="text-left font-semibold leading-snug hover:underline cursor-pointer transition-opacity hover:opacity-80"
-                          style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold-light)' }}
-                        >
-                          {session.title}
-                        </button>
+                        <div className="flex items-start gap-2">
+                          {inCampaign && <SessionNumber n={i + 1} />}
+                          <button
+                            onClick={() => navigate(`/session/${session.public_id}`)}
+                            className="text-left font-semibold leading-snug hover:underline cursor-pointer transition-opacity hover:opacity-80"
+                            style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold-light)' }}
+                          >
+                            {session.title}
+                          </button>
+                        </div>
                       </td>
                       {selectedCampaign === 'all' && (
                         <td className="px-5 py-4 align-top whitespace-nowrap text-xs" style={{ color: 'var(--color-parchment-muted)' }}>
@@ -504,6 +582,7 @@ export default function DashboardPage() {
                       </td>
                       <td className="px-4 py-4 align-top whitespace-nowrap">
                         <div className="flex items-center gap-2">
+                          {showReorder && <ReorderControls index={i} total={sessions.length} onMove={dir => moveSession(i, dir)} />}
                           <button
                             title="Copy share link"
                             onClick={async () => {
@@ -560,9 +639,12 @@ export default function DashboardPage() {
           campaignId={selectedCampaignData.id}
           campaignName={selectedCampaignData.name}
           sessionCount={recapSessionCount}
+          sessions={sessions.map(s => ({ id: s.id, title: s.title }))}
           onClose={() => setShowRecap(false)}
         />
       )}
+
+      {showDeleted && <DeletedSessionsModal onClose={() => setShowDeleted(false)} />}
 
       {/* ── New Campaign modal ── */}
       {showModal && (
@@ -857,6 +939,40 @@ function IncludeHistoryToggle({ value, onChange }: { value: boolean; onChange: (
       <p className="text-xs leading-relaxed" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-body)', paddingLeft: '48px' }}>
         When enabled, previous session summaries are passed to the AI to help it maintain continuity.
       </p>
+    </div>
+  )
+}
+
+function SessionNumber({ n }: { n: number }) {
+  return (
+    <span
+      className="shrink-0 text-xs pt-0.5 tabular-nums"
+      style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)', opacity: 0.7, minWidth: '1.5rem' }}
+    >
+      #{n}
+    </span>
+  )
+}
+
+function ReorderControls({ index, total, onMove }: { index: number; total: number; onMove: (direction: -1 | 1) => void }) {
+  const arrow = (direction: -1 | 1, disabled: boolean) => (
+    <button
+      type="button"
+      onClick={() => onMove(direction)}
+      disabled={disabled}
+      title={direction === -1 ? 'Move up' : 'Move down'}
+      className="w-7 h-7 flex items-center justify-center rounded-md cursor-pointer transition-opacity hover:opacity-80 disabled:opacity-25 disabled:cursor-not-allowed"
+      style={{ background: 'var(--color-surface-raised)', border: '1px solid var(--color-border)', color: 'var(--color-gold-light)' }}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style={{ transform: direction === 1 ? 'rotate(180deg)' : undefined }}>
+        <path d="M6 15l6-6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+  )
+  return (
+    <div className="flex items-center gap-1 shrink-0">
+      {arrow(-1, index === 0)}
+      {arrow(1, index === total - 1)}
     </div>
   )
 }

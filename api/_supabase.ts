@@ -72,7 +72,7 @@ export async function getCampaignGenerationContext(
 
   const [{ data: campaignData }, { data: historyData }, { data: chars }] = await Promise.all([
     supabase.from('campaigns').select('notes, include_history').eq('id', campaignId).single(),
-    supabase.from('sessions').select('tldr').eq('campaign_id', campaignId).not('tldr', 'is', null).order('created_at', { ascending: true }),
+    supabase.from('sessions').select('tldr').eq('campaign_id', campaignId).not('tldr', 'is', null).order('position', { ascending: true }),
     supabase.from('campaign_characters').select('name, notes').eq('campaign_id', campaignId).order('sort_order'),
   ])
 
