@@ -91,7 +91,11 @@ export default function AudioPlayer({ src, duration: savedDuration }: { src: str
 
       <SkipButton seconds={-SKIP_SECONDS} onClick={() => seekTo(current - SKIP_SECONDS)} />
 
-      <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+      <div
+        className="flex-1 min-w-0 flex items-center gap-3 text-xs tabular-nums"
+        style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)', letterSpacing: '0.04em' }}
+      >
+        <span className="shrink-0">{formatTime(current)}</span>
         <input
           type="range"
           className="audio-seek"
@@ -104,10 +108,7 @@ export default function AudioPlayer({ src, duration: savedDuration }: { src: str
           aria-label="Seek"
           style={{ '--progress': `${progress}%` } as React.CSSProperties}
         />
-        <div className="flex justify-between text-xs tabular-nums" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-parchment-muted)', letterSpacing: '0.04em' }}>
-          <span>{formatTime(current)}</span>
-          <span>{duration ? formatTime(duration) : '--:--'}</span>
-        </div>
+        <span className="shrink-0">{duration ? formatTime(duration) : '--:--'}</span>
       </div>
 
       <SkipButton seconds={SKIP_SECONDS} onClick={() => seekTo(current + SKIP_SECONDS)} />

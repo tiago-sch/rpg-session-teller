@@ -59,8 +59,8 @@ export default function NarrationPlayer({ kind, id, audioUrl, voice, duration, t
         <div className="flex flex-col gap-1.5">
           <AudioPlayer key={audioUrl} src={audioUrl} duration={duration} />
           {editable && !choosing && (
-            <div className="flex justify-between items-center gap-3">
-              <span className="text-xs" style={{ color: 'var(--color-mist)' }}>
+            <div className="flex justify-between items-center gap-3 px-1">
+              <span className="text-xs" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-mist)', letterSpacing: '0.04em' }}>
                 {voice && `Voice: ${NARRATION_VOICES.find(v => v.id === voice)?.label.split(' — ')[0] ?? voice}`}
               </span>
               <button
