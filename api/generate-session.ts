@@ -1,4 +1,4 @@
-import { generateSession } from './_gemini.js'
+import { generateSession } from './_openai.js'
 import { ensureInkBalance, getCampaignGenerationContext, requireUser, spendInk } from './_supabase.js'
 import { readJsonBody, sendError } from './_http.js'
 import type { ApiRequest, ApiResponse } from './_http.js'

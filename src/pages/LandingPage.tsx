@@ -158,7 +158,7 @@ export default function LandingPage() {
                 Paint your story<br />with one click.
               </h2>
               <p className="text-base leading-relaxed" style={{ color: 'var(--color-parchment-muted)', fontFamily: 'var(--font-body)' }}>
-                Generate a fantasy scene illustration for any chronicle using Gemini. The AI uses your session notes, campaign context, characters, and tone to craft a painterly image that captures the mood of the adventure — no prompting skills required.
+                Generate a fantasy scene illustration for any chronicle using AI. The AI uses your session notes, campaign context, characters, and tone to craft a painterly image that captures the mood of the adventure — no prompting skills required.
               </p>
             </div>
 
@@ -256,7 +256,7 @@ export default function LandingPage() {
                 </svg>
               }
               title="AI Chronicles"
-              body="Gemini transforms your bullet-point notes into immersive narrative prose. Names, quotes, and events preserved exactly."
+              body="AI transforms your bullet-point notes into immersive narrative prose. Names, quotes, and events preserved exactly."
             />
             <Feature
               icon={

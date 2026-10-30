@@ -2,7 +2,7 @@
 
 **Turn your messy session notes into polished chronicles.**
 
-RPG Session Teller is a web app for tabletop RPG players and game masters. Paste your bullet-point notes after a session, and Gemini AI transforms them into a narrative summary and a full story retelling — in whatever language you wrote the notes in, preserving every name, quote, and event faithfully.
+RPG Session Teller is a web app for tabletop RPG players and game masters. Paste your bullet-point notes after a session, and OpenAI transforms them into a narrative summary and a full story retelling — in whatever language you wrote the notes in, preserving every name, quote, and event faithfully.
 
 **Live app → [session-teller.tiagoschmidt.com](https://session-teller.tiagoschmidt.com)**
 
@@ -10,7 +10,7 @@ RPG Session Teller is a web app for tabletop RPG players and game masters. Paste
 
 ## Features
 
-- **AI Chronicle Generation** — Powered by Gemini 2.5 Flash. Produces a short summary (tldr) and a richly written narrative from raw notes. Never invents lore or characters not present in your notes.
+- **AI Chronicle Generation** — Powered by OpenAI GPT-5.4 mini. Produces a short summary (tldr) and a richly written narrative from raw notes. Never invents lore or characters not present in your notes.
 - **Multilingual** — Write notes in any language; the output matches.
 - **Campaigns** — Organise sessions into campaigns with names and descriptions. Filter your chronicles by campaign from the dashboard.
 - **Public Share Links** — Every session gets a public URL you can share with your table. Only the owner can access the editing view.
@@ -30,7 +30,7 @@ RPG Session Teller is a web app for tabletop RPG players and game masters. Paste
 | Routing | React Router v7 |
 | Auth & Database | Supabase (email/password auth, PostgreSQL, RLS) |
 | Payments | Stripe Checkout + webhooks |
-| AI | Google Gemini 2.5 Flash (`@google/genai`) |
+| AI | OpenAI GPT-5.4 mini (text) + GPT Image 2 (images) (`openai`) |
 | Hosting | Vercel |
 
 **Fonts:** Cinzel (display) + Crimson Pro (body) via Google Fonts.
@@ -66,7 +66,7 @@ Row-level security ensures users can only read and write their own data. Session
 
 - Node.js 20+
 - A [Supabase](https://supabase.com) project
-- A [Google AI Studio](https://aistudio.google.com) API key (Gemini)
+- An [OpenAI](https://platform.openai.com) API key
 
 ### Setup
 
@@ -81,7 +81,7 @@ Create a `.env.local` file:
 ```env
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
-GEMINI_API_KEY=your-gemini-api-key
+OPENAI_API_KEY=your-openai-api-key
 STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
@@ -90,7 +90,7 @@ INK_CURRENCY=brl
 VITE_INK_CURRENCY=brl
 ```
 
-The Vercel API routes also accept `SUPABASE_URL` and `SUPABASE_ANON_KEY`; if omitted, they fall back to the existing `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. `INK_CURRENCY` controls the Stripe Checkout base charge currency, and `VITE_INK_CURRENCY` keeps the storefront price display in sync. Checkout enables Stripe Adaptive Pricing so eligible customers can pay localized converted prices. Keep `GEMINI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `SUPABASE_SERVICE_ROLE_KEY` server-only.
+The Vercel API routes also accept `SUPABASE_URL` and `SUPABASE_ANON_KEY`; if omitted, they fall back to the existing `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. `INK_CURRENCY` controls the Stripe Checkout base charge currency, and `VITE_INK_CURRENCY` keeps the storefront price display in sync. Checkout enables Stripe Adaptive Pricing so eligible customers can pay localized converted prices. Keep `OPENAI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `SUPABASE_SERVICE_ROLE_KEY` server-only.
 
 ### Database
 
@@ -133,7 +133,7 @@ The `vercel.json` at the root configures SPA routing so direct links (e.g. `/s/:
 }
 ```
 
-Add the client variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) and server secrets (`GEMINI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `APP_URL`) in the Vercel project settings before deploying.
+Add the client variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) and server secrets (`OPENAI_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `APP_URL`) in the Vercel project settings before deploying.
 
 ---
 

@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai'
+import OpenAI from 'openai'
 import { requiredEnv } from './_env.js'
 
 export interface GeneratedSession {
@@ -80,30 +80,26 @@ export interface CampaignContext {
   characters?: { name: string; notes?: string | null }[]
 }
 
-function geminiClient() {
-  return new GoogleGenAI({ apiKey: requiredEnv('GEMINI_API_KEY') })
+const TEXT_MODEL = process.env.OPENAI_TEXT_MODEL || 'gpt-5.4-mini'
+const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
+
+function openaiClient() {
+  return new OpenAI({ apiKey: requiredEnv('OPENAI_API_KEY') })
 }
 
 export async function generateImage(prompt: string): Promise<{ base64: string; mimeType: string }> {
-  const response = await geminiClient().models.generateContent({
-    model: 'gemini-3.1-flash-image-preview',
-    contents: prompt,
-    config: {
-      responseModalities: ['IMAGE', 'TEXT'],
-    },
+  const response = await openaiClient().images.generate({
+    model: IMAGE_MODEL,
+    prompt,
+    n: 1,
+    size: '1536x1024',
+    output_format: 'png',
   })
 
-  const parts = response.candidates?.[0]?.content?.parts ?? []
-  for (const part of parts) {
-    if (part.inlineData?.data) {
-      return {
-        base64: part.inlineData.data,
-        mimeType: part.inlineData.mimeType ?? 'image/png',
-      }
-    }
-  }
+  const base64 = response.data?.[0]?.b64_json
+  if (base64) return { base64, mimeType: 'image/png' }
 
-  throw new Error('No image data returned from Gemini.')
+  throw new Error('No image data returned from OpenAI.')
 }
 
 export async function generateSession(
@@ -138,21 +134,20 @@ export async function generateSession(
   const tone = TONES.find(t => t.id === toneId)
   const systemInstruction = `${baseInstruction}${contextBlock}${historyBlock}${tone ? `\n\n${tone.instruction}` : ''}`
 
-  const response = await geminiClient().models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: prompt,
-    config: {
-      systemInstruction,
-      responseMimeType: 'application/json',
-      temperature: fillGaps ? 0.9 : 0.7,
-    },
+  const response = await openaiClient().chat.completions.create({
+    model: TEXT_MODEL,
+    messages: [
+      { role: 'system', content: systemInstruction },
+      { role: 'user', content: prompt },
+    ],
+    response_format: { type: 'json_object' },
   })
 
-  const text = response.text ?? ''
+  const text = response.choices[0]?.message?.content ?? ''
   const parsed = JSON.parse(text) as GeneratedSession
 
   if (!parsed.tldr || !parsed.story) {
-    throw new Error('Gemini returned an unexpected response shape.')
+    throw new Error('OpenAI returned an unexpected response shape.')
   }
 
   return parsed

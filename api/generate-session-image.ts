@@ -1,4 +1,4 @@
-import { generateImage } from './_gemini.js'
+import { generateImage } from './_openai.js'
 import { ensureInkBalance, requireUser, spendInk, supabaseAdmin } from './_supabase.js'
 import { readJsonBody, sendError } from './_http.js'
 import type { ApiRequest, ApiResponse } from './_http.js'
