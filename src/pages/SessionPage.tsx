@@ -29,6 +29,7 @@ interface Session {
   image_prompt: string | null
   audio_url: string | null
   audio_voice: string | null
+  audio_duration: number | null
   created_at: string
   updated_at: string
 }
@@ -104,7 +105,7 @@ export default function SessionPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('sessions')
-        .select('id, user_id, title, campaign_id, campaigns(name, notes), tldr, prompt, tone, generated_text, cover_image_url, image_prompt, audio_url, audio_voice, created_at, updated_at')
+        .select('id, user_id, title, campaign_id, campaigns(name, notes), tldr, prompt, tone, generated_text, cover_image_url, image_prompt, audio_url, audio_voice, audio_duration, created_at, updated_at')
         .eq('public_id', public_id)
         .single()
       if (error || !data) throw new Error('Not found')
@@ -129,7 +130,7 @@ export default function SessionPage() {
     queryClient.invalidateQueries({ queryKey: ['sessions', user?.id] })
     queryClient.invalidateQueries({ queryKey: ['campaign-episodes'] })
     queryClient.invalidateQueries({ queryKey: ['deleted-sessions'] })
-    navigate('/dashboard')
+    navigate(session.campaign_id ? `/dashboard?campaign=${session.campaign_id}` : '/dashboard')
   }
 
   // Autosave edit draft while editing
@@ -767,10 +768,11 @@ export default function SessionPage() {
                       id={session.id}
                       audioUrl={session.audio_url}
                       voice={session.audio_voice}
+                      duration={session.audio_duration}
                       textLength={session.title.length + session.generated_text.trim().length + 2}
                       editable
-                      onGenerated={(audioUrl, voice) => {
-                        queryClient.setQueryData(sessionQueryKey, (old: Session | undefined) => old ? { ...old, audio_url: audioUrl, audio_voice: voice } : old)
+                      onGenerated={(audioUrl, voice, duration) => {
+                        queryClient.setQueryData(sessionQueryKey, (old: Session | undefined) => old ? { ...old, audio_url: audioUrl, audio_voice: voice, audio_duration: duration } : old)
                         queryClient.invalidateQueries({ queryKey: ['session_public', public_id] })
                       }}
                     />

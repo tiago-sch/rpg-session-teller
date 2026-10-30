@@ -7,17 +7,17 @@ import type { EpisodeSession } from '../hooks/useCampaignEpisodes'
 
 export function PreviouslyOn({ sessionId }: { sessionId: number | null | undefined }) {
   const [open, setOpen] = useState(true)
-  const { data: recap } = useQuery<{ id: number; recap: string; audio_url: string | null } | null>({
+  const { data: recap } = useQuery<{ id: number; recap: string; audio_url: string | null; audio_duration: number | null } | null>({
     queryKey: ['session-recap', sessionId],
     queryFn: async () => {
       const { data } = await supabase
         .from('campaign_recaps')
-        .select('id, recap, audio_url')
+        .select('id, recap, audio_url, audio_duration')
         .eq('session_id', sessionId!)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
-      return (data as { id: number; recap: string; audio_url: string | null } | null) ?? null
+      return (data as { id: number; recap: string; audio_url: string | null; audio_duration: number | null } | null) ?? null
     },
     enabled: !!sessionId,
   })
@@ -42,7 +42,7 @@ export function PreviouslyOn({ sessionId }: { sessionId: number | null | undefin
       {open && (
         <div className="flex flex-col gap-3 mt-3">
           {recap.audio_url && (
-            <NarrationPlayer kind="recap" id={recap.id} audioUrl={recap.audio_url} voice={null} textLength={0} editable={false} />
+            <NarrationPlayer kind="recap" id={recap.id} audioUrl={recap.audio_url} voice={null} duration={recap.audio_duration} textLength={0} editable={false} />
           )}
           <p className="text-base leading-relaxed whitespace-pre-line italic" style={{ color: 'var(--color-parchment-muted)' }}>
             {recap.recap}

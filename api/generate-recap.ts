@@ -61,7 +61,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
         session_count: sessions.length,
         last_session_id: sessions[sessions.length - 1].id,
       })
-      .select('id, recap, tone, session_count, last_session_id, session_id, audio_url, audio_voice, created_at')
+      .select('id, recap, tone, session_count, last_session_id, session_id, audio_url, audio_voice, audio_duration, created_at')
       .single()
     if (saveError || !saved) throw saveError ?? new Error('Failed to save recap.')
 

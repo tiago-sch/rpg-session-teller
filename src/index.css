@@ -41,3 +41,44 @@ body {
   color: var(--color-parchment);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Narration player seek bar */
+.audio-seek {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--color-gold) 0%, var(--color-gold) var(--progress, 0%), var(--color-border-bright) var(--progress, 0%), var(--color-border-bright) 100%);
+  cursor: pointer;
+  outline: none;
+}
+
+.audio-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-gold-light);
+  border: 2px solid var(--color-ink);
+  box-shadow: 0 0 8px rgba(200, 145, 58, 0.5);
+}
+
+.audio-seek::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--color-gold-light);
+  border: 2px solid var(--color-ink);
+  box-shadow: 0 0 8px rgba(200, 145, 58, 0.5);
+}
+
+.audio-seek:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 2px;
+}
+
+.audio-seek:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

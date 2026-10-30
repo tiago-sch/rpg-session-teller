@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { requiredEnv } from './_env.js'
+import { joinMp3 } from './_mp3.js'
 
 export interface GeneratedSession {
   tldr: string
@@ -261,8 +262,7 @@ export async function synthesizeSpeech(text: string, voice: NarrationVoice, inst
   }
 
   await Promise.all(Array.from({ length: Math.min(SPEECH_CONCURRENCY, chunks.length) }, worker))
-  // MP3 frames are self-contained, so the pieces can simply be joined.
-  return Buffer.concat(audio)
+  return joinMp3(audio)
 }
 
 function splitForSpeech(text: string): string[] {

@@ -1,5 +1,6 @@
 import { detectLanguage, narrationInstructions, NARRATION_VOICES, synthesizeSpeech } from './_openai.js'
 import type { NarrationVoice } from './_openai.js'
+import { mp3Duration } from './_mp3.js'
 import { ensureInkBalance, requireUser, spendInk, supabaseAdmin } from './_supabase.js'
 import { readJsonBody, sendError } from './_http.js'
 import type { ApiRequest, ApiResponse } from './_http.js'
@@ -38,6 +39,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const language = target.language ?? await detectLanguage(target.text)
     const audio = await synthesizeSpeech(target.text, body.voice, narrationInstructions(language, target.toneId))
+    const duration = mp3Duration(audio)
     const newBalance = await spendInk(supabase, cost)
 
     const admin = supabaseAdmin()
@@ -50,14 +52,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     const { error: saveError } = await supabase
       .from(target.table)
-      .update({ audio_url: publicUrl, audio_voice: body.voice, language })
+      .update({ audio_url: publicUrl, audio_voice: body.voice, audio_duration: duration, language })
       .eq('id', target.id)
     if (saveError) throw saveError
 
     const oldPath = target.audioUrl && storagePath(target.audioUrl)
     if (oldPath) await admin.storage.from(BUCKET).remove([oldPath])
 
-    return res.status(200).json({ audioUrl: publicUrl, voice: body.voice, inks: newBalance })
+    return res.status(200).json({ audioUrl: publicUrl, voice: body.voice, duration, inks: newBalance })
   } catch (error) {
     console.error('Failed to generate narration', error)
     return sendError(res, 500, error instanceof Error ? error.message : 'Narration failed')

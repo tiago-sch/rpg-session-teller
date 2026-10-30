@@ -19,6 +19,7 @@ interface SessionPublicData {
   generated_text: string | null
   cover_image_url: string | null
   audio_url: string | null
+  audio_duration: number | null
   updated_at: string
   creator_name: string | null
   owner_id: string
@@ -49,7 +50,7 @@ export default function SharePage() {
     queryFn: async () => {
       const { data: sessionData, error } = await supabase
         .from('sessions')
-        .select('id, campaign_id, title, campaigns(name), prompt, tldr, generated_text, cover_image_url, audio_url, updated_at, user_id')
+        .select('id, campaign_id, title, campaigns(name), prompt, tldr, generated_text, cover_image_url, audio_url, audio_duration, updated_at, user_id')
         .eq('public_id', public_id)
         .single()
 
@@ -79,6 +80,7 @@ export default function SharePage() {
         generated_text: sd.generated_text,
         cover_image_url: sd.cover_image_url ?? null,
         audio_url: sd.audio_url ?? null,
+        audio_duration: sd.audio_duration ?? null,
         updated_at: sd.updated_at,
         creator_name: profileData?.display_name ?? null,
         owner_id: sessionData.user_id,
@@ -246,7 +248,7 @@ export default function SharePage() {
                 <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Chronicle</p>
                 {data.audio_url && (
                   <div className="mb-5">
-                    <NarrationPlayer kind="session" id={data.id} audioUrl={data.audio_url} voice={null} textLength={0} editable={false} />
+                    <NarrationPlayer kind="session" id={data.id} audioUrl={data.audio_url} voice={null} duration={data.audio_duration} textLength={0} editable={false} />
                   </div>
                 )}
                 <div className="text-base leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}>

@@ -28,7 +28,7 @@
   },
   "crons": [
     {
-      "path": "/api/cleanup-narrations",
+      "path": "/api/cleanup-storage",
       "schedule": "0 5 * * *"
     }
   ]

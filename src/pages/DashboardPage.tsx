@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../lib/queryClient'
 import { useAuth } from '../context/AuthContext'
@@ -44,7 +44,14 @@ export default function DashboardPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
 
-  const [selectedCampaign, setSelectedCampaign] = useState<number | 'all' | 'none'>('all')
+  // The selected campaign lives in the URL (?campaign=<id> or ?campaign=none) so
+  // going back from a session returns to the same list.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const campaignParam = searchParams.get('campaign')
+  const selectedCampaign: number | 'all' | 'none' =
+    campaignParam === 'none' ? 'none'
+      : campaignParam && /^\d+$/.test(campaignParam) ? Number(campaignParam)
+      : 'all'
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [showRecap, setShowRecap] = useState(false)
   const [reordering, setReordering] = useState(false)
@@ -52,7 +59,7 @@ export default function DashboardPage() {
   const [reorderError, setReorderError] = useState('')
 
   const selectCampaign = (campaign: number | 'all' | 'none') => {
-    setSelectedCampaign(campaign)
+    setSearchParams(campaign === 'all' ? {} : { campaign: String(campaign) }, { replace: true })
     setReordering(false)
     setReorderError('')
   }

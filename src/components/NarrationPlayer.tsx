@@ -5,16 +5,18 @@ import { useProfile, type Profile } from '../hooks/useProfile'
 import { apiPost } from '../lib/api'
 import { DEFAULT_VOICE, NARRATION_VOICES, narrationCost } from '../lib/narration'
 import InkCost from './InkCost'
+import AudioPlayer from './AudioPlayer'
 
 // Plays a saved narration, and lets the owner generate (or re-voice) it.
-export default function NarrationPlayer({ kind, id, audioUrl, voice, textLength, editable, onGenerated }: {
+export default function NarrationPlayer({ kind, id, audioUrl, voice, duration, textLength, editable, onGenerated }: {
   kind: 'session' | 'recap'
   id: number
   audioUrl: string | null
   voice: string | null
+  duration?: number | null
   textLength: number
   editable: boolean
-  onGenerated?: (audioUrl: string, voice: string) => void
+  onGenerated?: (audioUrl: string, voice: string, duration: number) => void
 }) {
   const { user, session } = useAuth()
   const { profile } = useProfile()
@@ -32,7 +34,7 @@ export default function NarrationPlayer({ kind, id, audioUrl, voice, textLength,
     setError('')
     setGenerating(true)
     try {
-      const result = await apiPost<{ audioUrl: string; voice: string; inks: number }>('/api/generate-audio', session, {
+      const result = await apiPost<{ audioUrl: string; voice: string; duration: number; inks: number }>('/api/generate-audio', session, {
         kind,
         id,
         voice: selectedVoice,
@@ -41,7 +43,7 @@ export default function NarrationPlayer({ kind, id, audioUrl, voice, textLength,
         old ? { ...old, inks: result.inks } : old
       )
       setChoosing(false)
-      onGenerated?.(result.audioUrl, result.voice)
+      onGenerated?.(result.audioUrl, result.voice, result.duration)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Narration failed.')
     } finally {
@@ -55,7 +57,7 @@ export default function NarrationPlayer({ kind, id, audioUrl, voice, textLength,
     <div className="flex flex-col gap-3">
       {audioUrl && (
         <div className="flex flex-col gap-1.5">
-          <audio key={audioUrl} controls preload="none" src={audioUrl} className="w-full" style={{ colorScheme: 'dark', height: 40 }} />
+          <AudioPlayer key={audioUrl} src={audioUrl} duration={duration} />
           {editable && !choosing && (
             <div className="flex justify-between items-center gap-3">
               <span className="text-xs" style={{ color: 'var(--color-mist)' }}>

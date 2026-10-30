@@ -21,6 +21,7 @@ export interface Recap {
   session_id: number | null
   audio_url: string | null
   audio_voice: string | null
+  audio_duration: number | null
   created_at: string
 }
 
@@ -51,7 +52,7 @@ export default function CampaignRecapModal({ campaignId, campaignName, sessionCo
     queryFn: async () => {
       const { data, error } = await supabase
         .from('campaign_recaps')
-        .select('id, recap, tone, session_count, last_session_id, session_id, audio_url, audio_voice, created_at')
+        .select('id, recap, tone, session_count, last_session_id, session_id, audio_url, audio_voice, audio_duration, created_at')
         .eq('campaign_id', campaignId)
         .order('created_at', { ascending: false })
       if (error) throw error
@@ -105,8 +106,8 @@ export default function CampaignRecapModal({ campaignId, campaignName, sessionCo
   const cardProps = (recap: Recap) => ({
     recap,
     sessions,
-    onNarrated: (audioUrl: string, voice: string) => {
-      queryClient.setQueryData(queryKey, (old: Recap[] | undefined) => old?.map(r => (r.id === recap.id ? { ...r, audio_url: audioUrl, audio_voice: voice } : r)))
+    onNarrated: (audioUrl: string, voice: string, duration: number) => {
+      queryClient.setQueryData(queryKey, (old: Recap[] | undefined) => old?.map(r => (r.id === recap.id ? { ...r, audio_url: audioUrl, audio_voice: voice, audio_duration: duration } : r)))
       queryClient.invalidateQueries({ queryKey: ['session-recap'] })
     },
     onLink: (sessionId: number | null) => updateRecap(recap.id, { session_id: sessionId }),
@@ -218,7 +219,7 @@ function RecapCard({ recap, sessions, compact, onNarrated, onLink, onDelete }: {
   recap: Recap
   sessions: RecapSessionOption[]
   compact?: boolean
-  onNarrated: (audioUrl: string, voice: string) => void
+  onNarrated: (audioUrl: string, voice: string, duration: number) => void
   onLink: (sessionId: number | null) => void
   onDelete: () => void
 }) {
@@ -250,6 +251,7 @@ function RecapCard({ recap, sessions, compact, onNarrated, onLink, onDelete }: {
         id={recap.id}
         audioUrl={recap.audio_url}
         voice={recap.audio_voice}
+        duration={recap.audio_duration}
         textLength={recap.recap.length}
         editable
         onGenerated={onNarrated}
