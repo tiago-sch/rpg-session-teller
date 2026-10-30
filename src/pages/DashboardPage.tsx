@@ -5,6 +5,7 @@ import { queryClient } from '../lib/queryClient'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import AppHeader from '../components/AppHeader'
+import CampaignRecapModal from '../components/CampaignRecapModal'
 
 interface Campaign {
   id: number
@@ -43,6 +44,7 @@ export default function DashboardPage() {
 
   const [selectedCampaign, setSelectedCampaign] = useState<number | 'all' | 'none'>('all')
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [showRecap, setShowRecap] = useState(false)
 
   // ── Create modal ──
   const [showModal, setShowModal] = useState(false)
@@ -232,6 +234,8 @@ export default function DashboardPage() {
   }
 
   const isLoading = loadingSessions || loadingCampaigns
+  const selectedCampaignData = typeof selectedCampaign === 'number' ? campaigns.find(c => c.id === selectedCampaign) : undefined
+  const recapSessionCount = selectedCampaignData ? sessions.filter(s => s.tldr).length : 0
 
   return (
     <div
@@ -305,6 +309,16 @@ export default function DashboardPage() {
                 : (campaigns.find(c => c.id === selectedCampaign)?.name ?? '')}
             </h1>
             <div className="flex items-center gap-2 shrink-0">
+              {typeof selectedCampaign === 'number' && recapSessionCount > 0 && (
+                <button
+                  onClick={() => setShowRecap(true)}
+                  className="px-3 sm:px-4 py-2 rounded-lg text-xs font-semibold tracking-widest uppercase transition-opacity cursor-pointer hover:opacity-80"
+                  style={{ fontFamily: 'var(--font-display)', background: 'var(--color-surface-raised)', border: '1px solid var(--color-gold-dim)', color: 'var(--color-gold-light)' }}
+                  title="Write a recap to read at the start of the next session"
+                >
+                  Previously on…
+                </button>
+              )}
               {selectedCampaign !== 'all' && selectedCampaign !== 'none' && (
                 <button
                   onClick={() => { const c = campaigns.find(x => x.id === selectedCampaign); if (c) openEdit(c) }}
@@ -539,6 +553,16 @@ export default function DashboardPage() {
           )}
         </main>
       </div>
+
+      {showRecap && selectedCampaignData && recapSessionCount > 0 && (
+        <CampaignRecapModal
+          key={selectedCampaignData.id}
+          campaignId={selectedCampaignData.id}
+          campaignName={selectedCampaignData.name}
+          sessionCount={recapSessionCount}
+          onClose={() => setShowRecap(false)}
+        />
+      )}
 
       {/* ── New Campaign modal ── */}
       {showModal && (

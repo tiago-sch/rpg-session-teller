@@ -152,3 +152,56 @@ export async function generateSession(
 
   return parsed
 }
+
+const RECAP_INSTRUCTION = `You are the narrator of an ongoing tabletop RPG campaign.
+Write a "Previously on…" recap that the game master will read aloud at the start of the next session.
+
+Rules:
+- Use ONLY the events in the provided session summaries and latest chronicle. Never invent events, characters, places, or lore.
+- Preserve ALL proper names and terminology exactly as written.
+- Detect the language of the sessions and write the recap in that same language, including the opening line (e.g. "Previously on…", "Anteriormente em…").
+- Keep it between 120 and 250 words: about one to two minutes read aloud.
+- Move through events in chronological order, giving the most weight to the latest session.
+- End on the open threads and the moment where the party left off, building anticipation for tonight's session.
+- Write for the ear: short, vivid sentences, no bullet points, no headings.
+
+Return ONLY a valid JSON object with this exact shape:
+{
+  "recap": "<the recap text>"
+}`
+
+export interface RecapSession {
+  title: string
+  tldr: string
+}
+
+export async function generateRecap(
+  campaignName: string,
+  sessions: RecapSession[],
+  latestStory: string | null,
+  toneId?: string | null,
+  campaignContext?: CampaignContext,
+): Promise<string> {
+  const parts = [`Campaign: ${campaignName}`]
+  if (campaignContext?.notes?.trim()) parts.push(`World & Lore Notes:\n${campaignContext.notes.trim()}`)
+  const characters = campaignContext?.characters?.filter(c => c.name.trim()) ?? []
+  if (characters.length > 0) {
+    parts.push(`Key Characters:\n${characters.map(c => c.notes?.trim() ? `- ${c.name.trim()}: ${c.notes.trim()}` : `- ${c.name.trim()}`).join('\n')}`)
+  }
+  parts.push(`Sessions in chronological order:\n${sessions.map((s, i) => `Session ${i + 1} — ${s.title}: ${s.tldr}`).join('\n')}`)
+  if (latestStory?.trim()) parts.push(`Full chronicle of the latest session:\n${latestStory.trim().slice(0, 12000)}`)
+
+  const tone = TONES.find(t => t.id === toneId)
+  const response = await openaiClient().chat.completions.create({
+    model: TEXT_MODEL,
+    messages: [
+      { role: 'system', content: `${RECAP_INSTRUCTION}${tone ? `\n\n${tone.instruction}` : ''}` },
+      { role: 'user', content: parts.join('\n\n') },
+    ],
+    response_format: { type: 'json_object' },
+  })
+
+  const parsed = JSON.parse(response.choices[0]?.message?.content ?? '') as { recap?: string }
+  if (!parsed.recap?.trim()) throw new Error('OpenAI returned an unexpected response shape.')
+  return parsed.recap.trim()
+}
