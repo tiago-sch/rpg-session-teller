@@ -25,5 +25,11 @@
     "api/generate-audio.ts": {
       "maxDuration": 300
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cleanup-narrations",
+      "schedule": "0 5 * * *"
+    }
+  ]
 }
