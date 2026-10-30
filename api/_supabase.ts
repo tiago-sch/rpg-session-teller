@@ -19,6 +19,13 @@ export function supabaseForToken(token: string) {
   )
 }
 
+export function supabaseAnon() {
+  return createClient(
+    requiredEnvAny('SUPABASE_URL', 'VITE_SUPABASE_URL'),
+    requiredEnvAny('SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY'),
+  )
+}
+
 export function supabaseAdmin() {
   return createClient(
     requiredEnvAny('SUPABASE_URL', 'VITE_SUPABASE_URL'),

@@ -2,6 +2,14 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
+      "source": "/s/:public_id",
+      "destination": "/api/og?type=session&id=:public_id"
+    },
+    {
+      "source": "/g/:public_id",
+      "destination": "/api/og?type=group&id=:public_id"
+    },
+    {
       "source": "/((?!api/).*)",
       "has": [
         { "type": "header", "key": "accept", "value": ".*text/html.*" }
