@@ -12,9 +12,18 @@
     {
       "source": "/((?!api/).*)",
       "has": [
-        { "type": "header", "key": "accept", "value": ".*text/html.*" }
+        {
+          "type": "header",
+          "key": "accept",
+          "value": ".*text/html.*"
+        }
       ],
       "destination": "/index.html"
     }
-  ]
+  ],
+  "functions": {
+    "api/generate-audio.ts": {
+      "maxDuration": 300
+    }
+  }
 }

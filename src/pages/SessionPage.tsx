@@ -10,6 +10,7 @@ import { TONES } from '../lib/tones'
 import CampaignSelect from '../components/CampaignSelect'
 import AppHeader from '../components/AppHeader'
 import InkCost from '../components/InkCost'
+import NarrationPlayer from '../components/NarrationPlayer'
 import { EpisodeNav, PreviouslyOn } from '../components/SessionEpisode'
 import { useCampaignEpisodes } from '../hooks/useCampaignEpisodes'
 import { useDraft, formatDraftAge, type DraftData } from '../hooks/useDraft'
@@ -26,6 +27,8 @@ interface Session {
   generated_text: string | null
   cover_image_url: string | null
   image_prompt: string | null
+  audio_url: string | null
+  audio_voice: string | null
   created_at: string
   updated_at: string
 }
@@ -101,7 +104,7 @@ export default function SessionPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('sessions')
-        .select('id, user_id, title, campaign_id, campaigns(name, notes), tldr, prompt, tone, generated_text, cover_image_url, image_prompt, created_at, updated_at')
+        .select('id, user_id, title, campaign_id, campaigns(name, notes), tldr, prompt, tone, generated_text, cover_image_url, image_prompt, audio_url, audio_voice, created_at, updated_at')
         .eq('public_id', public_id)
         .single()
       if (error || !data) throw new Error('Not found')
@@ -757,6 +760,22 @@ export default function SessionPage() {
             {session.generated_text !== null && (
               <div className="rounded-xl px-5 sm:px-6 py-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                 <p className="text-xs font-semibold tracking-widest uppercase mb-3" style={{ fontFamily: 'var(--font-display)', color: 'var(--color-gold)' }}>Chronicle</p>
+                {session.generated_text.trim() && (
+                  <div className="mb-5">
+                    <NarrationPlayer
+                      kind="session"
+                      id={session.id}
+                      audioUrl={session.audio_url}
+                      voice={session.audio_voice}
+                      textLength={session.title.length + session.generated_text.trim().length + 2}
+                      editable
+                      onGenerated={(audioUrl, voice) => {
+                        queryClient.setQueryData(sessionQueryKey, (old: Session | undefined) => old ? { ...old, audio_url: audioUrl, audio_voice: voice } : old)
+                        queryClient.invalidateQueries({ queryKey: ['session_public', public_id] })
+                      }}
+                    />
+                  </div>
+                )}
                 <div className="text-base leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--color-parchment)', fontFamily: 'var(--font-body)' }}>
                   {session.generated_text}
                 </div>

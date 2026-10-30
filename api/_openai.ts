@@ -205,3 +205,82 @@ export async function generateRecap(
   if (!parsed.recap?.trim()) throw new Error('OpenAI returned an unexpected response shape.')
   return parsed.recap.trim()
 }
+
+const SPEECH_MODEL = process.env.OPENAI_SPEECH_MODEL || 'gpt-4o-mini-tts'
+// The speech model reads at most ~2000 tokens per request; this keeps chunks well under that.
+const SPEECH_CHUNK_CHARS = 3000
+const SPEECH_CONCURRENCY = 4
+
+export const NARRATION_VOICES = ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'fable', 'marin', 'nova', 'onyx', 'sage', 'shimmer', 'verse'] as const
+export type NarrationVoice = typeof NARRATION_VOICES[number]
+
+const TONE_DELIVERY: Record<string, string> = {
+  dark_fantasy: 'Low, grave and weary, like a survivor recounting grim events. Let silences linger.',
+  epic_high_fantasy: 'Stately and resonant, like reading an ancient saga aloud. Measured pace, sense of grandeur.',
+  comedic_chaotic: 'Warm and wry, with good comic timing, like a friend telling a ridiculous story at the tavern.',
+  bard: 'Theatrical and rhythmic, like a bard performing for a tavern crowd, with dramatic pauses and flourishes.',
+  journal: 'Intimate and quiet, first person, like someone reading their own private journal by candlelight.',
+}
+
+// Returns the language the text is written in, in English, e.g. "Brazilian Portuguese".
+export async function detectLanguage(text: string): Promise<string> {
+  const response = await openaiClient().chat.completions.create({
+    model: TEXT_MODEL,
+    messages: [
+      { role: 'system', content: 'Identify the language of the user text, including the regional variant when the spelling or vocabulary shows it. Return ONLY a JSON object: {"language": "<language and regional variant in English, e.g. Brazilian Portuguese, European Spanish, American English>"}' },
+      { role: 'user', content: text.slice(0, 1500) },
+    ],
+    response_format: { type: 'json_object' },
+  })
+  const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}') as { language?: string }
+  return parsed.language?.trim() || 'English'
+}
+
+export function narrationInstructions(language: string, toneId?: string | null) {
+  const delivery = (toneId && TONE_DELIVERY[toneId]) || 'Calm, warm and immersive, like a narrator reading a fantasy chronicle aloud.'
+  return `Speak in ${language} with a natural, native accent for that language and region. Read proper names exactly as written. ${delivery}`
+}
+
+export async function synthesizeSpeech(text: string, voice: NarrationVoice, instructions: string): Promise<Buffer> {
+  const chunks = splitForSpeech(text)
+  const audio: Buffer[] = new Array(chunks.length)
+  let next = 0
+
+  async function worker() {
+    while (next < chunks.length) {
+      const index = next++
+      const response = await openaiClient().audio.speech.create({
+        model: SPEECH_MODEL,
+        voice,
+        input: chunks[index],
+        instructions,
+        response_format: 'mp3',
+      })
+      audio[index] = Buffer.from(await response.arrayBuffer())
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(SPEECH_CONCURRENCY, chunks.length) }, worker))
+  // MP3 frames are self-contained, so the pieces can simply be joined.
+  return Buffer.concat(audio)
+}
+
+function splitForSpeech(text: string): string[] {
+  const pieces = text
+    .split(/\n\s*\n|\n/)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .flatMap(p => (p.length <= SPEECH_CHUNK_CHARS ? [p] : p.match(/[^.!?…]+[.!?…]+["”»']?\s*|[^.!?…]+$/g) ?? [p]))
+
+  const chunks: string[] = []
+  let current = ''
+  for (const piece of pieces) {
+    if (current && current.length + piece.length + 2 > SPEECH_CHUNK_CHARS) {
+      chunks.push(current)
+      current = ''
+    }
+    current = current ? `${current}\n\n${piece}` : piece
+  }
+  if (current) chunks.push(current)
+  return chunks
+}

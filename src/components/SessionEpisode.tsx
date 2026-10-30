@@ -2,21 +2,22 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import NarrationPlayer from './NarrationPlayer'
 import type { EpisodeSession } from '../hooks/useCampaignEpisodes'
 
 export function PreviouslyOn({ sessionId }: { sessionId: number | null | undefined }) {
   const [open, setOpen] = useState(true)
-  const { data: recap } = useQuery<string | null>({
+  const { data: recap } = useQuery<{ id: number; recap: string; audio_url: string | null } | null>({
     queryKey: ['session-recap', sessionId],
     queryFn: async () => {
       const { data } = await supabase
         .from('campaign_recaps')
-        .select('recap')
+        .select('id, recap, audio_url')
         .eq('session_id', sessionId!)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
-      return (data as { recap: string } | null)?.recap ?? null
+      return (data as { id: number; recap: string; audio_url: string | null } | null) ?? null
     },
     enabled: !!sessionId,
   })
@@ -39,9 +40,14 @@ export function PreviouslyOn({ sessionId }: { sessionId: number | null | undefin
         <span className="text-xs" style={{ color: 'var(--color-parchment-muted)' }}>{open ? 'Hide' : 'Show'}</span>
       </button>
       {open && (
-        <p className="text-base leading-relaxed whitespace-pre-line italic mt-3" style={{ color: 'var(--color-parchment-muted)' }}>
-          {recap}
-        </p>
+        <div className="flex flex-col gap-3 mt-3">
+          {recap.audio_url && (
+            <NarrationPlayer kind="recap" id={recap.id} audioUrl={recap.audio_url} voice={null} textLength={0} editable={false} />
+          )}
+          <p className="text-base leading-relaxed whitespace-pre-line italic" style={{ color: 'var(--color-parchment-muted)' }}>
+            {recap.recap}
+          </p>
+        </div>
       )}
     </div>
   )

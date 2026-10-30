@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { queryClient } from '../lib/queryClient'
 import { supabase } from '../lib/supabase'
@@ -7,6 +7,7 @@ import { useProfile, type Profile } from '../hooks/useProfile'
 import { apiPost } from '../lib/api'
 import { TONES } from '../lib/tones'
 import InkCost from './InkCost'
+import NarrationPlayer from './NarrationPlayer'
 
 const RECAP_COST = 1
 const SESSION_COUNTS = [1, 3, 5, 10]
@@ -18,6 +19,8 @@ export interface Recap {
   session_count: number
   last_session_id: number | null
   session_id: number | null
+  audio_url: string | null
+  audio_voice: string | null
   created_at: string
 }
 
@@ -40,7 +43,6 @@ export default function CampaignRecapModal({ campaignId, campaignName, sessionCo
   const [toneId, setToneId] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
-  const [speakingId, setSpeakingId] = useState<number | null>(null)
   const [showEarlier, setShowEarlier] = useState(false)
 
   const queryKey = ['campaign-recaps', campaignId]
@@ -49,15 +51,13 @@ export default function CampaignRecapModal({ campaignId, campaignName, sessionCo
     queryFn: async () => {
       const { data, error } = await supabase
         .from('campaign_recaps')
-        .select('id, recap, tone, session_count, last_session_id, session_id, created_at')
+        .select('id, recap, tone, session_count, last_session_id, session_id, audio_url, audio_voice, created_at')
         .eq('campaign_id', campaignId)
         .order('created_at', { ascending: false })
       if (error) throw error
       return (data as Recap[]) ?? []
     },
   })
-
-  useEffect(() => () => window.speechSynthesis?.cancel(), [])
 
   const [latest, ...earlier] = recaps
   const notEnoughInk = profile !== null && profile.inks < RECAP_COST
@@ -66,8 +66,6 @@ export default function CampaignRecapModal({ campaignId, campaignName, sessionCo
   const handleGenerate = async () => {
     setError('')
     setGenerating(true)
-    window.speechSynthesis?.cancel()
-    setSpeakingId(null)
     try {
       const result = await apiPost<{ recap: Recap; inks: number }>('/api/generate-recap', session, {
         campaignId,
@@ -85,21 +83,6 @@ export default function CampaignRecapModal({ campaignId, campaignName, sessionCo
     }
   }
 
-  const handleSpeak = (recap: Recap) => {
-    if (!window.speechSynthesis) return
-    window.speechSynthesis.cancel()
-    if (speakingId === recap.id) {
-      setSpeakingId(null)
-      return
-    }
-    const utterance = new SpeechSynthesisUtterance(recap.recap)
-    utterance.rate = 0.95
-    utterance.onend = () => setSpeakingId(id => (id === recap.id ? null : id))
-    utterance.onerror = () => setSpeakingId(id => (id === recap.id ? null : id))
-    window.speechSynthesis.speak(utterance)
-    setSpeakingId(recap.id)
-  }
-
   const updateRecap = async (id: number, patch: Partial<Recap>) => {
     setError('')
     queryClient.setQueryData(queryKey, (old: Recap[] | undefined) => old?.map(r => (r.id === id ? { ...r, ...patch } : r)))
@@ -112,10 +95,6 @@ export default function CampaignRecapModal({ campaignId, campaignName, sessionCo
   const deleteRecap = async (id: number) => {
     if (!window.confirm('Delete this recap?')) return
     setError('')
-    if (speakingId === id) {
-      window.speechSynthesis?.cancel()
-      setSpeakingId(null)
-    }
     queryClient.setQueryData(queryKey, (old: Recap[] | undefined) => old?.filter(r => r.id !== id))
     const { error } = await supabase.from('campaign_recaps').delete().eq('id', id)
     if (error) setError('Failed to delete the recap.')
@@ -126,8 +105,10 @@ export default function CampaignRecapModal({ campaignId, campaignName, sessionCo
   const cardProps = (recap: Recap) => ({
     recap,
     sessions,
-    speaking: speakingId === recap.id,
-    onSpeak: () => handleSpeak(recap),
+    onNarrated: (audioUrl: string, voice: string) => {
+      queryClient.setQueryData(queryKey, (old: Recap[] | undefined) => old?.map(r => (r.id === recap.id ? { ...r, audio_url: audioUrl, audio_voice: voice } : r)))
+      queryClient.invalidateQueries({ queryKey: ['session-recap'] })
+    },
     onLink: (sessionId: number | null) => updateRecap(recap.id, { session_id: sessionId }),
     onDelete: () => deleteRecap(recap.id),
   })
@@ -233,12 +214,11 @@ export default function CampaignRecapModal({ campaignId, campaignName, sessionCo
   )
 }
 
-function RecapCard({ recap, sessions, speaking, compact, onSpeak, onLink, onDelete }: {
+function RecapCard({ recap, sessions, compact, onNarrated, onLink, onDelete }: {
   recap: Recap
   sessions: RecapSessionOption[]
-  speaking: boolean
   compact?: boolean
-  onSpeak: () => void
+  onNarrated: (audioUrl: string, voice: string) => void
   onLink: (sessionId: number | null) => void
   onDelete: () => void
 }) {
@@ -265,6 +245,15 @@ function RecapCard({ recap, sessions, speaking, compact, onSpeak, onLink, onDele
       >
         {recap.recap}
       </p>
+      <NarrationPlayer
+        kind="recap"
+        id={recap.id}
+        audioUrl={recap.audio_url}
+        voice={recap.audio_voice}
+        textLength={recap.recap.length}
+        editable
+        onGenerated={onNarrated}
+      />
       <p className="text-xs" style={{ color: 'var(--color-mist)' }}>
         {new Date(recap.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
         {recap.session_count > 0 && ` · covers ${recap.session_count} session${recap.session_count === 1 ? '' : 's'}`}
@@ -288,9 +277,6 @@ function RecapCard({ recap, sessions, speaking, compact, onSpeak, onLink, onDele
         </select>
       </label>
       <div className="flex justify-end gap-2 flex-wrap">
-        {'speechSynthesis' in window && (
-          <SmallButton onClick={onSpeak}>{speaking ? 'Stop' : 'Read aloud'}</SmallButton>
-        )}
         <SmallButton onClick={handleCopy}>{copied ? 'Copied' : 'Copy'}</SmallButton>
         <SmallButton onClick={onDelete}>Delete</SmallButton>
       </div>
